@@ -3,8 +3,7 @@ dist/
 .env
 .env.*
 *.log
-# world save data stays local
-saves/
-backups/
+# The living world (saves and backups) stays on the machine running it.
+data/
 .DS_Store
 Thumbs.db
