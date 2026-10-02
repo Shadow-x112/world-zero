@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+*.log
+# world save data stays local
+saves/
+backups/
+.DS_Store
+Thumbs.db
