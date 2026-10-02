@@ -14,6 +14,10 @@ export interface WorldEvents {
   dawn: { day: number };
   /** Light crossed into night. */
   dusk: { day: number };
+  /** An agent died. */
+  agentDied: { agentId: number; cause: string };
+  /** No one is left alive. */
+  extinction: { tick: number };
 }
 
 export class EventBus {

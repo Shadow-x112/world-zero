@@ -17,18 +17,20 @@ import { promisify } from "node:util";
 import { Chronicle } from "../core/chronicle.ts";
 import { Rng, type RngState } from "../core/rng.ts";
 import { World, type WorldMeta } from "../core/world.ts";
+import { Population, type PopulationData } from "../agents/population.ts";
 import { Chunk, kindOf, type LayerArray, type LayerKind } from "../world/chunk.ts";
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 1;
+export const SAVE_FORMAT_VERSION = 2;
 
 interface SavedChunk {
   cx: number;
   cy: number;
   gen: number;
+  edited: boolean;
   layers: Record<string, { kind: LayerKind; data: string }>;
 }
 
@@ -40,11 +42,28 @@ export interface SaveData {
   rng: RngState;
   speed: number;
   chronicle: ReturnType<Chronicle["toJSON"]>;
+  /** Null only in saves from before agents existed; founders are added on load. */
+  population: PopulationData | null;
+  extinctTick: number | null;
+  /** Chunks that differ from generated ground, saved in full. */
   chunks: SavedChunk[];
+  /** Ground seen but unchanged: generator version -> chunk keys. Regenerated on demand. */
+  pristine: Record<string, number[]>;
 }
 
 /** Upgrades older saves step by step. Key = format version being upgraded from. */
-const MIGRATIONS: Record<number, (data: any) => any> = {};
+const MIGRATIONS: Record<number, (data: any) => any> = {
+  // 1 -> 2: agents were added. An agent-less world receives its founders on load.
+  1: (data) => ({
+    ...data,
+    format: 2,
+    population: null,
+    extinctTick: null,
+    // Version 1 saved every chunk in full; treat them all as changed.
+    chunks: data.chunks.map((c: any) => ({ ...c, edited: true })),
+    pristine: {},
+  }),
+};
 
 function encodeLayer(array: LayerArray): string {
   return Buffer.from(array.buffer, array.byteOffset, array.byteLength).toString("base64");
@@ -66,11 +85,13 @@ function decodeLayer(kind: LayerKind, data: string): LayerArray {
 /** Captures the full world state. Synchronous, so the snapshot is consistent. */
 export function serializeWorld(world: World, speed: number): SaveData {
   const chunks: SavedChunk[] = [];
-  for (const chunk of world.grid.allChunks()) {
+  for (const chunk of world.grid.changedChunks()) {
     const layers: SavedChunk["layers"] = {};
     for (const [name, array] of chunk.layers) layers[name] = { kind: kindOf(array), data: encodeLayer(array) };
-    chunks.push({ cx: chunk.cx, cy: chunk.cy, gen: chunk.generatorVersion, layers });
+    chunks.push({ cx: chunk.cx, cy: chunk.cy, gen: chunk.generatorVersion, edited: chunk.edited, layers });
   }
+  const pristine: Record<string, number[]> = {};
+  for (const [key, version] of world.grid.pristineVersions()) (pristine[version] ??= []).push(key);
   return {
     format: SAVE_FORMAT_VERSION,
     savedAt: new Date().toISOString(),
@@ -79,7 +100,10 @@ export function serializeWorld(world: World, speed: number): SaveData {
     rng: world.rng.getState(),
     speed,
     chronicle: world.chronicle.toJSON(),
+    population: world.population.toJSON(),
+    extinctTick: world.extinctTick,
     chunks,
+    pristine,
   };
 }
 
@@ -95,13 +119,31 @@ export function deserializeWorld(raw: any): { world: World; speed: number } {
     data = migrate(data);
   }
   const save = data as SaveData;
-  const world = new World(save.meta, save.tick, new Rng(save.rng), Chronicle.fromJSON(save.chronicle));
-  for (const saved of save.chunks) {
-    const chunk = new Chunk(saved.cx, saved.cy, saved.gen);
-    for (const [name, layer] of Object.entries(saved.layers)) chunk.layers.set(name, decodeLayer(layer.kind, layer.data));
-    chunk.dirty = false;
-    world.grid.putChunk(chunk);
-  }
+  const chronicle = Chronicle.fromJSON(save.chronicle);
+  const rng = new Rng(save.rng);
+  const population = save.population ? Population.fromJSON(save.population) : new Population();
+  const world = World.restore(save.meta, save.tick, rng, chronicle, population, save.extinctTick, (w) => {
+    for (const saved of save.chunks) {
+      const chunk = new Chunk(saved.cx, saved.cy, saved.gen);
+      for (const [name, layer] of Object.entries(saved.layers)) chunk.setLayer(name, decodeLayer(layer.kind, layer.data));
+      chunk.edited = saved.edited;
+      chunk.recountWear();
+      chunk.dirty = false;
+      w.grid.putChunk(chunk);
+    }
+    for (const [version, keys] of Object.entries(save.pristine)) {
+      for (const key of keys) w.grid.rememberPristine(key, Number(version));
+    }
+    if (!save.population) {
+      const founders = w.population.spawnFounders(w.rng, w.tick);
+      w.chronicle.add(
+        w.tick,
+        "founders",
+        `${founders.length} identical beings opened their eyes together in the middle of the plain.`,
+        { ids: founders.map((a) => a.id) },
+      );
+    }
+  });
   return { world, speed: save.speed };
 }
 
@@ -142,10 +184,22 @@ export class Store {
   readonly backupsDir: string;
   private saving: Promise<void> | null = null;
 
+  readonly archiveDir: string;
+
   constructor(dir: string) {
     this.dir = dir;
     this.savesDir = join(dir, "saves");
     this.backupsDir = join(dir, "backups");
+    this.archiveDir = join(dir, "archive");
+  }
+
+  /** Keeps a permanent copy of a world that has ended. Archives are never pruned. */
+  async archive(world: World, speed: number): Promise<string> {
+    await mkdir(this.archiveDir, { recursive: true });
+    const name = `world-g${world.meta.generation}-${world.meta.id}-${stamp()}.json.gz`;
+    const path = join(this.archiveDir, name);
+    await writeAtomic(path, await gzipAsync(Buffer.from(JSON.stringify(serializeWorld(world, speed)))));
+    return path;
   }
 
   get currentPath(): string {

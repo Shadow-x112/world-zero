@@ -8,6 +8,9 @@ import { Rng, randomSeed } from "./rng.ts";
 import { getCalendar, type Calendar } from "./time.ts";
 import { Grid } from "../world/grid.ts";
 import { FLAT_RADIUS } from "../world/generator.ts";
+import { Population } from "../agents/population.ts";
+import { AgentSystem } from "../agents/system.ts";
+import { GridMaintenance } from "../world/maintenance.ts";
 
 export interface System {
   readonly name: string;
@@ -32,19 +35,46 @@ export class World {
   readonly grid: Grid;
   readonly rng: Rng;
   readonly chronicle: Chronicle;
+  readonly population: Population;
   readonly events = new EventBus();
   tick: number;
+  /** When the last agent died, or null while anyone lives. */
+  extinctTick: number | null = null;
   calendar: Calendar;
   private systems: System[] = [];
 
-  constructor(meta: WorldMeta, tick: number, rng: Rng, chronicle: Chronicle) {
+  constructor(meta: WorldMeta, tick: number, rng: Rng, chronicle: Chronicle, population = new Population()) {
     this.meta = meta;
     this.tick = tick;
     this.rng = rng;
     this.chronicle = chronicle;
+    this.population = population;
     this.grid = new Grid(meta.seed);
     this.calendar = getCalendar(tick);
+  }
+
+  /** Attaches the standard systems. Called once the world's contents are in place. */
+  private start(): void {
     this.addSystem(new CalendarSystem());
+    this.addSystem(new AgentSystem());
+    this.addSystem(new GridMaintenance());
+  }
+
+  /** A world rebuilt from saved parts (see persist/store.ts). */
+  static restore(
+    meta: WorldMeta,
+    tick: number,
+    rng: Rng,
+    chronicle: Chronicle,
+    population: Population,
+    extinctTick: number | null,
+    fill: (world: World) => void,
+  ): World {
+    const world = new World(meta, tick, rng, chronicle, population);
+    world.extinctTick = extinctTick;
+    fill(world);
+    world.start();
+    return world;
   }
 
   /** A brand-new world with an empty plain around the origin. */
@@ -59,6 +89,14 @@ export class World {
     const world = new World(meta, START_TICK, Rng.fromSeed(seed), new Chronicle());
     world.grid.ensureArea(0, 0, FLAT_RADIUS);
     world.chronicle.add(world.tick, "world", "The world began: an empty grid under the morning light.");
+    const founders = world.population.spawnFounders(world.rng, world.tick);
+    world.chronicle.add(
+      world.tick,
+      "founders",
+      `${founders.length} identical beings opened their eyes together in the middle of the plain.`,
+      { ids: founders.map((a) => a.id) },
+    );
+    world.start();
     return world;
   }
 

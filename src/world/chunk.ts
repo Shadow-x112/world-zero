@@ -25,6 +25,8 @@ export const LAYERS: Record<string, LayerKind> = {
   height: "i16",
   /** Ground type: see Terrain. */
   terrain: "u8",
+  /** How often agents have walked across the tile. Well-worn tiles become paths, then roads. */
+  wear: "u16",
 };
 
 export const Terrain = {
@@ -54,6 +56,12 @@ export class Chunk {
   generatorVersion: number;
   /** True when the chunk has changed since it was last saved. */
   dirty = true;
+  /** True once anything other than wear differs from what generation produced. */
+  edited = false;
+  /** Number of tiles with any wear. Wear fades, so this can return to zero. */
+  wearTiles = 0;
+  private terrainCache: LayerArray | null = null;
+  private heightCache: LayerArray | null = null;
 
   constructor(cx: number, cy: number, generatorVersion: number) {
     this.cx = cx;
@@ -62,15 +70,19 @@ export class Chunk {
     for (const [name, kind] of Object.entries(LAYERS)) this.layers.set(name, createLayer(kind));
   }
 
-  static key(cx: number, cy: number): string {
-    return `${cx},${cy}`;
+  /** Packs chunk coordinates into one number (chunk coordinates stay well within ±1,000,000). */
+  static key(cx: number, cy: number): number {
+    return (cx + 1048576) * 2097152 + (cy + 1048576);
   }
 
-  get key(): string {
+  get key(): number {
     return Chunk.key(this.cx, this.cy);
   }
 
   layer(name: string): LayerArray {
+    // Fast paths for the layers read constantly.
+    if (name === "terrain" && this.terrainCache) return this.terrainCache;
+    if (name === "height" && this.heightCache) return this.heightCache;
     let array = this.layers.get(name);
     if (!array) {
       const kind = LAYERS[name];
@@ -79,7 +91,40 @@ export class Chunk {
       array = createLayer(kind);
       this.layers.set(name, array);
     }
+    if (name === "terrain") this.terrainCache = array;
+    else if (name === "height") this.heightCache = array;
     return array;
+  }
+
+  get heightLayer(): LayerArray {
+    return this.heightCache ?? this.layer("height");
+  }
+
+  get terrainLayer(): LayerArray {
+    return this.terrainCache ?? this.layer("terrain");
+  }
+
+  /** Replaces a layer's data (used when loading). */
+  setLayer(name: string, array: LayerArray): void {
+    this.layers.set(name, array);
+    if (name === "terrain") this.terrainCache = array;
+    else if (name === "height") this.heightCache = array;
+  }
+
+  /**
+   * Pristine chunks are exactly what generation produces, so they need not be
+   * saved or kept in memory: they can be regenerated at any time.
+   */
+  get pristine(): boolean {
+    return !this.edited && this.wearTiles === 0;
+  }
+
+  /** Recounts wear after loading. */
+  recountWear(): void {
+    const wear = this.layers.get("wear");
+    let n = 0;
+    if (wear) for (let i = 0; i < wear.length; i++) if (wear[i] !== 0) n++;
+    this.wearTiles = n;
   }
 
   /** Index of a local tile (0..CHUNK_SIZE-1 on each axis). */

@@ -12,9 +12,10 @@ async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "world-zero-test-"));
 }
 
-test("a new world starts with a chronicle entry and the starting plain", () => {
+test("a new world starts with its founders, a chronicle and the starting plain", () => {
   const world = World.create({ seed: 11 });
-  assert.equal(world.chronicle.size, 1);
+  assert.equal(world.population.count, 20);
+  assert.deepEqual(world.chronicle.all().map((e) => e.kind), ["world", "founders"]);
   assert.ok(world.grid.chunkCount > 0);
   assert.equal(world.meta.generation, 1);
 });
@@ -39,8 +40,9 @@ test("save then load restores the same world exactly", async () => {
     assert.equal(loaded.world.tick, world.tick);
     assert.deepEqual(loaded.world.rng.getState(), world.rng.getState());
     assert.deepEqual(loaded.world.chronicle.toJSON(), world.chronicle.toJSON());
-    assert.equal(loaded.world.grid.chunkCount, world.grid.chunkCount);
+    assert.equal(loaded.world.grid.knownChunkCount, world.grid.knownChunkCount);
     assert.equal(loaded.world.grid.heightAt(10, -10), 3);
+    assert.equal(JSON.stringify(loaded.world.population), JSON.stringify(world.population));
     assert.equal(loaded.world.grid.heightAt(900, 900), world.grid.heightAt(900, 900));
     assert.deepEqual(serializeWorld(loaded.world, 10).chunks, serializeWorld(world, 10).chunks);
   } finally {
@@ -63,6 +65,7 @@ test("a loaded world continues identically to one that never stopped", () => {
 
 test("calendar events fire as days and seasons pass", () => {
   const world = World.create({ seed: 1 });
+  for (const agent of world.population.list()) world.population.remove(agent.id); // time only
   const seen = { newDay: 0, newSeason: 0, dawn: 0, dusk: 0 };
   world.events.on("newDay", () => seen.newDay++);
   world.events.on("newSeason", () => seen.newSeason++);
@@ -129,4 +132,63 @@ test("old backups are pruned: recent ones kept, then one per day", async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("untouched ground is not saved but comes back exactly the same", async () => {
+  const dir = await tempDir();
+  try {
+    const world = World.create({ seed: 31 });
+    const far = [700, -650];
+    const before = world.grid.heightAt(far[0], far[1]);
+    const known = world.grid.knownChunkCount;
+    const data = serializeWorld(world, 1);
+    assert.equal(data.chunks.length, 0, "nothing has changed yet, so no chunk data is saved");
+    const store = new Store(dir);
+    await store.save(world, 1);
+    const loaded = (await store.load())!.world;
+    assert.equal(loaded.grid.knownChunkCount, known);
+    assert.equal(loaded.grid.heightAt(far[0], far[1]), before);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("worn or changed ground is saved; footpaths fade unless used", () => {
+  const world = World.create({ seed: 8 });
+  world.grid.set("wear", 5, 5, 1);
+  world.grid.set("wear", 6, 5, 200);
+  assert.equal(serializeWorld(world, 1).chunks.length, 1);
+  world.grid.fadeWear();
+  assert.equal(world.grid.get("wear", 5, 5), 0, "a single pass fades away");
+  assert.ok(world.grid.get("wear", 6, 5) > 150, "a well-used path remains");
+  for (let i = 0; i < 100; i++) world.grid.fadeWear();
+  assert.equal(world.grid.get("wear", 6, 5), 0);
+  assert.equal(serializeWorld(world, 1).chunks.length, 0, "once faded, the ground is pristine again");
+});
+
+test("pristine ground far from everyone is unloaded and regenerates identically", () => {
+  const world = World.create({ seed: 12 });
+  const h = world.grid.heightAt(2000, 2000);
+  const loadedBefore = world.grid.chunkCount;
+  world.grid.unloadIdle(() => false);
+  assert.ok(world.grid.chunkCount < loadedBefore);
+  assert.equal(world.grid.heightAt(2000, 2000), h);
+});
+
+test("a step-1 save (format 1, no agents) upgrades and receives its founders", () => {
+  const world = World.create({ seed: 3 });
+  const v2 = serializeWorld(world, 1) as any;
+  const v1 = {
+    format: 1,
+    savedAt: v2.savedAt,
+    meta: v2.meta,
+    tick: v2.tick,
+    rng: v2.rng,
+    speed: 1,
+    chronicle: { nextId: 2, entries: [v2.chronicle.entries[0]] },
+    chunks: [],
+  };
+  const { world: upgraded } = deserializeWorld(v1);
+  assert.equal(upgraded.population.count, 20);
+  assert.equal(upgraded.chronicle.all().at(-1)!.kind, "founders");
 });

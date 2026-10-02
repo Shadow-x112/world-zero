@@ -21,7 +21,9 @@ While it runs, type a command and press Enter:
 
 | Command | What it does |
 | --- | --- |
-| `status` | Current date, time, light, speed |
+| `status` | Current date, time, light, speed, population |
+| `ais` | Every living AI, one line each |
+| `ai <id>` | Everything about one AI, e.g. `ai 7` |
 | `pause` / `resume` | Stop or restart time |
 | `speed <n>` | 1, 2, 5, 10, 25, 50 or 100 |
 | `save` | Save now (it also autosaves every minute) |
@@ -29,12 +31,14 @@ While it runs, type a command and press Enter:
 | `chronicle [n]` | Last n important events |
 | `quit` | Save and stop (Ctrl+C does the same) |
 
-The world lives in `data/` (not in git). There is only ever one world: it is never restarted unless the whole population dies out.
+The world lives in `data/` (not in git). There is only ever one world: it is never restarted unless the whole population dies out. If that happens, the ended world is kept forever in `data/archive/` and a new one begins.
+
+Important events (deaths, firsts, milestones) are printed as they happen, marked with ✦.
 
 ## Build order
 
 1. **Simulation core: grid, time, save/load** ✅
-2. AI agents: needs, movement, death
+2. **AI agents: needs, movement, death** ✅ (no food exists until step 3, so for now they starve after about 5 days)
 3. Materials: properties, placement, abundance
 4. Crafting and building
 5. Learning: specialization, personality, teaching, emergent language
@@ -46,8 +50,10 @@ The world lives in `data/` (not in git). There is only ever one world: it is nev
 
 ```
 src/core/      time, calendar, randomness, world, runner, chronicle, events
-src/world/     endless chunked grid and world generation
+src/agents/    the AIs: bodies and needs, decisions, actions, pathfinding, population
+src/world/     endless chunked grid, world generation, grid upkeep
 src/persist/   saving, loading, backups
+src/inspect.ts text descriptions of AIs
 src/main.ts    entry point
 test/          tests
 ```

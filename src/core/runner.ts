@@ -26,7 +26,7 @@ export function isSpeed(value: number): value is Speed {
 }
 
 export class Runner {
-  readonly world: World;
+  world: World;
   private speedValue: Speed;
   private backlog = 0; // ticks owed
   private last = 0;
@@ -54,6 +54,12 @@ export class Runner {
     this.maxBacklogSeconds = options.maxBacklogSeconds ?? 2;
     this.now = options.now ?? (() => performance.now());
     this.onFrame = options.onFrame;
+  }
+
+  /** Swaps in a different world (used after an extinction). */
+  setWorld(world: World): void {
+    this.world = world;
+    this.backlog = 0;
   }
 
   get speed(): Speed {

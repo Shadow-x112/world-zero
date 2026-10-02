@@ -89,3 +89,22 @@ Decisions made while planning, before any agent code exists. Later steps build o
 
 - The engine runs headless; a separate 3D viewer (Three.js) connects to watch.
 - For now it runs on the home PC. Later it moves to a 24/7 server (Railway) without a rewrite.
+
+## Implementation notes (step 2)
+
+How the plan above was turned into numbers. All of these are tunable.
+
+- Walking: 1.2 tiles per world second (a tile is about a metre), slower when hurt or exhausted. Steps may climb or drop one level.
+- Energy: full to empty in about 3 days (less while asleep, more in the cold season). At zero, health fails over about 2 days.
+- Rest: about 20 hours awake empties it; about 7 hours of sleep restores it. At zero the AI collapses asleep and health slowly suffers.
+- Social (mild): about 2 days alone empties it; a few hours of company restores it. It never harms health.
+- Curiosity: grows restless over about 12 hours; each newly seen area satisfies some of it.
+- Exposure: cold-season nights in the open cost health. Shelter (later) prevents it.
+- Health recovers over about 2 days when fed and rested. From 80% of the lifespan the most health an AI can have declines, reaching zero at the end of its natural life.
+- Founders start at a quarter of their lifespan (grown, young), each on its own tile near the centre, with eight tiny fixed "quirks" so identical beings still choose slightly differently.
+- Decisions: utility scores for sleep, seeking food, exploring, seeking company and idling, re-evaluated every world minute, with a little noise and a bonus for continuing the current action. Darkness pulls strongly toward sleep; sleepers stay down until they are rested and it is light, unless hunger wakes them.
+- Home: each AI has a home spot (its starting tile for now). Exploration prefers unknown ground but is discouraged in proportion to distance from home, so the known area grows outward gradually. A restless (low curiosity) mind tolerates straying farther.
+- Long trips are walked in legs of up to 32 tiles; companions are only followed while in sight.
+- Footpaths: every step adds wear to a tile; wear fades by 7% a day, so a single pass vanishes within a day while regularly used routes build up. These become paths and roads later.
+- Ground storage: only ground that differs from what generation produces is kept and saved. Untouched ground is unloaded when no one is within about 100 tiles and regenerated exactly from the seed and generator version. Generator versions are never changed once used.
+- Death: the body stays where it fell for 3 world days. The chronicle records every death while the population is small. If no one is left, the world is archived and a new one begins (its generation number increases).
