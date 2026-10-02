@@ -15,6 +15,7 @@ const DEATH_WORDS: Record<DeathCause, string> = {
   exposure: "died of cold in the open night",
   "old age": "died of old age",
   injury: "died of injuries",
+  poisoning: "was poisoned by something it ate",
 };
 
 export class AgentSystem implements System {

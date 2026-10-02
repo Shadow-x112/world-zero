@@ -27,6 +27,10 @@ export const LAYERS: Record<string, LayerKind> = {
   terrain: "u8",
   /** How often agents have walked across the tile. Well-worn tiles become paths, then roads. */
   wear: "u16",
+  /** Material lying on the tile (an id in the world's material registry; 0 = none). */
+  material: "u8",
+  /** Units of that material left on the tile. */
+  amount: "u16",
 };
 
 export const Terrain = {
@@ -52,8 +56,10 @@ export class Chunk {
   readonly cx: number;
   readonly cy: number;
   readonly layers = new Map<string, LayerArray>();
-  /** Which generator version created this chunk. Saved chunks are never regenerated. */
+  /** Which terrain generator version created this chunk. */
   generatorVersion: number;
+  /** Which material placement version filled it (0 = not yet placed). */
+  materialVersion = 0;
   /** True when the chunk has changed since it was last saved. */
   dirty = true;
   /** True once anything other than wear differs from what generation produced. */

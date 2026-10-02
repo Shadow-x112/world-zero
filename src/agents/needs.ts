@@ -42,6 +42,8 @@ export const RATES = {
   exposureDamage: 1 / 40,
   /** Light below this counts as night for exposure. */
   exposureLightThreshold: 0.3,
+  /** Sleeping close to others cuts exposure harm to this fraction. */
+  huddleFactor: 0.5,
 
   /** Health recovers over about 2 days when fed and rested. */
   healthRecover: 1 / 48,
@@ -115,9 +117,12 @@ export function updateBody(agent: Agent, world: World, ctx: BodyContext): DeathC
   };
   if (needs.energy <= 0) hurt("starvation", RATES.starvationDamage * h);
   if (needs.rest <= 0) hurt("exhaustion", RATES.exhaustionDamage * h);
-  if (cold && cal.light < RATES.exposureLightThreshold && !ctx.sheltered) hurt("exposure", RATES.exposureDamage * h);
+  // Cold-season nights in the open: huddling with others halves the harm; shelter prevents it.
+  const exposed = cold && cal.light < RATES.exposureLightThreshold && !ctx.sheltered;
+  if (exposed) hurt("exposure", RATES.exposureDamage * (ctx.hasCompany ? RATES.huddleFactor : 1) * h);
 
-  const canRecover = needs.energy > RATES.recoverThreshold && needs.rest > RATES.recoverThreshold;
+  // A freezing body can't heal.
+  const canRecover = !exposed && needs.energy > RATES.recoverThreshold && needs.rest > RATES.recoverThreshold;
   if (canRecover) agent.health += RATES.healthRecover * h;
 
   // Old age lowers the ceiling health can recover to, and eventually takes it.

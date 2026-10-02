@@ -10,6 +10,21 @@
 
 import { CHUNK_SIZE, Chunk, Terrain } from "./chunk.ts";
 import { GENERATOR_VERSION, generateChunk } from "./generator.ts";
+import { MATERIAL_VERSION, placeMaterials } from "../materials/placement.ts";
+
+/**
+ * Untouched chunks are remembered by a version code: terrain version * 1000 +
+ * material placement version. Codes below 1000 come from saves made before
+ * materials existed; such ground receives the current placement.
+ */
+export function versionCode(terrain: number, material: number): number {
+  return terrain * 1000 + material;
+}
+
+export function splitVersionCode(code: number): { terrain: number; material: number } {
+  if (code < 1000) return { terrain: code, material: MATERIAL_VERSION };
+  return { terrain: Math.floor(code / 1000), material: code % 1000 };
+}
 
 /** Floor division that works for negative numbers. */
 export function toChunkCoord(v: number): number {
@@ -27,7 +42,7 @@ export class Grid {
   readonly seed: number;
   /** Chunks currently in memory. */
   private readonly loaded = new Map<number, Chunk>();
-  /** Chunks seen before but unloaded because they were pristine: key -> generator version. */
+  /** Chunks seen before but unloaded because they were pristine: key -> version code. */
   private readonly unloaded = new Map<number, number>();
   /** The most recently used chunk; most lookups hit the same one repeatedly. */
   private lastChunk: Chunk | null = null;
@@ -58,8 +73,11 @@ export class Grid {
     const key = Chunk.key(cx, cy);
     let chunk = this.loaded.get(key);
     if (!chunk) {
-      const version = this.unloaded.get(key) ?? GENERATOR_VERSION;
-      chunk = generateChunk(this.seed, cx, cy, version);
+      const code = this.unloaded.get(key);
+      const v = code === undefined ? { terrain: GENERATOR_VERSION, material: MATERIAL_VERSION } : splitVersionCode(code);
+      chunk = generateChunk(this.seed, cx, cy, v.terrain);
+      placeMaterials(chunk, this.seed, v.material);
+      chunk.dirty = false;
       this.unloaded.delete(key);
       this.loaded.set(key, chunk);
     }
@@ -74,18 +92,20 @@ export class Grid {
   }
 
   /** Records a pristine chunk from a save without loading it. */
-  rememberPristine(key: number, version: number): void {
-    if (!this.loaded.has(key)) this.unloaded.set(key, version);
+  rememberPristine(key: number, code: number): void {
+    if (!this.loaded.has(key)) this.unloaded.set(key, code);
   }
 
   allChunks(): IterableIterator<Chunk> {
     return this.loaded.values();
   }
 
-  /** Generator version of every pristine chunk, loaded or not: key -> version. */
+  /** Version code of every pristine chunk, loaded or not: key -> code. */
   pristineVersions(): Map<number, number> {
     const out = new Map(this.unloaded);
-    for (const chunk of this.loaded.values()) if (chunk.pristine) out.set(chunk.key, chunk.generatorVersion);
+    for (const chunk of this.loaded.values()) {
+      if (chunk.pristine) out.set(chunk.key, versionCode(chunk.generatorVersion, chunk.materialVersion));
+    }
     return out;
   }
 
@@ -157,7 +177,7 @@ export class Grid {
     for (const [key, chunk] of this.loaded) {
       if (!chunk.pristine || needed(chunk.cx, chunk.cy)) continue;
       this.loaded.delete(key);
-      this.unloaded.set(key, chunk.generatorVersion);
+      this.unloaded.set(key, versionCode(chunk.generatorVersion, chunk.materialVersion));
       if (this.lastChunk === chunk) this.lastChunk = null;
       count++;
     }

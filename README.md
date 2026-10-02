@@ -23,7 +23,8 @@ While it runs, type a command and press Enter:
 | --- | --- |
 | `status` | Current date, time, light, speed, population |
 | `ais` | Every living AI, one line each |
-| `ai <id>` | Everything about one AI, e.g. `ai 7` |
+| `ai <id>` | Everything about one AI, e.g. `ai 7`: needs, what it carries, what it has learned |
+| `materials` | Every kind of material and its true properties |
 | `pause` / `resume` | Stop or restart time |
 | `speed <n>` | 1, 2, 5, 10, 25, 50 or 100 |
 | `save` | Save now (it also autosaves every minute) |
@@ -38,8 +39,8 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
 ## Build order
 
 1. **Simulation core: grid, time, save/load** ✅
-2. **AI agents: needs, movement, death** ✅ (no food exists until step 3, so for now they starve after about 5 days)
-3. Materials: properties, placement, abundance
+2. **AI agents: needs, movement, death** ✅
+3. **Materials: properties, placement, abundance** ✅ (no shelter until step 4, so the cold season still kills some of them)
 4. Crafting and building
 5. Learning: specialization, personality, teaching, emergent language
 6. Server deployment (24/7)
@@ -50,7 +51,8 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
 
 ```
 src/core/      time, calendar, randomness, world, runner, chronicle, events
-src/agents/    the AIs: bodies and needs, decisions, actions, pathfinding, population
+src/agents/    the AIs: bodies and needs, decisions, actions, foraging, pathfinding, population
+src/materials/ material properties, placement in the world, regrowth
 src/world/     endless chunked grid, world generation, grid upkeep
 src/persist/   saving, loading, backups
 src/inspect.ts text descriptions of AIs

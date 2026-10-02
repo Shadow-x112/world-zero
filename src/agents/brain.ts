@@ -5,6 +5,7 @@
 
 import type { ActionType, Agent } from "./agent.ts";
 import { ACTIONS, type AgentContext } from "./actions.ts";
+import { GATHER_TARGET, carriedFoodUnits, hasFoodOption, survey } from "./foraging.ts";
 import { mustCollapse } from "./needs.ts";
 import { sightRadius } from "./senses.ts";
 
@@ -15,7 +16,7 @@ export const INERTIA = 0.08;
 /** Random variation added to each score at each decision. */
 export const NOISE = 0.04;
 
-const ORDER: ActionType[] = ["sleep", "seekFood", "explore", "socialize", "idle"];
+const ORDER: ActionType[] = ["sleep", "eat", "seekFood", "taste", "inspect", "gather", "explore", "socialize", "idle"];
 
 export type Scores = Record<ActionType, number>;
 
@@ -30,17 +31,34 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
   let sleep = Math.pow(tired, 3) * 1.6 + dark * (n.rest < 0.85 ? 0.55 : 0.1);
   if (n.rest <= 0.05) sleep = 2;
 
+  const world = ctx.world;
+  const seen = survey(agent, ctx);
+  const canEat = hasFoodOption(agent, ctx);
   const hunger = 1 - n.energy;
-  let seekFood = Math.pow(hunger, 1.5) * 1.3;
-  if (n.energy < 0.2) seekFood += 0.5;
+  const starving = n.energy < 0.2 ? 0.5 : 0;
 
-  const explore = (1 - n.curiosity) * 0.65 * (light < 0.3 ? 0.25 : 1);
+  // Hungry with food known: eat. Hungry with none known: search, or try something new.
+  const eat = canEat ? Math.pow(hunger, 1.2) * 1.6 + starving : 0;
+  const seekFood = canEat ? 0 : Math.pow(hunger, 1.5) * 1.3 + starving;
+  const restless = 1 - n.curiosity;
+  let taste = 0;
+  if (seen.untasted) taste = (canEat ? 0 : hunger * 1.3) + restless * 0.35;
+  const inspect = seen.unhandled ? restless * 0.7 : 0;
+
+  // Not hungry and food in sight: gather some to carry, more so as the warm seasons end.
+  let gather = 0;
+  if (seen.food && n.energy > 0.55 && carriedFoodUnits(agent, world) < GATHER_TARGET) {
+    const season = world.calendar.season;
+    gather = 0.1 + (season === "decline" || season === "cold" ? 0.15 : 0);
+  }
+
+  const explore = restless * 0.65 * (light < 0.3 ? 0.25 : 1);
 
   const knowsSomeone =
     agent.lastSeenOther !== null || ctx.index.any(agent.x, agent.y, sightRadius(light), agent);
   const socialize = knowsSomeone ? Math.pow(1 - n.social, 1.2) * 0.75 : 0;
 
-  return { sleep, seekFood, explore, socialize, idle: 0.08 };
+  return { sleep, eat, seekFood, taste, inspect, gather, explore, socialize, idle: 0.08 };
 }
 
 /** Updates what the agent remembers about others' whereabouts. */
@@ -74,7 +92,7 @@ export function decide(agent: Agent, ctx: AgentContext): void {
 
   const scores = scoreActions(agent, ctx);
   const ranked = ORDER.map((type, i) => {
-    let score = scores[type] + rng.range(-NOISE, NOISE) + agent.quirk[i + 1] * 0.02;
+    let score = scores[type] + rng.range(-NOISE, NOISE) + agent.quirk[(i + 1) % agent.quirk.length] * 0.02;
     if (agent.action?.type === type) score += INERTIA;
     return { type, score };
   }).sort((a, b) => b.score - a.score);
@@ -101,7 +119,9 @@ export function act(agent: Agent, ctx: AgentContext): void {
     return;
   }
 
-  if (!agent.action || mustCollapse(agent) || tick >= agent.nextDecisionTick) {
+  // Someone walking to company for the night stays committed to sleeping.
+  const goingToBed = agent.action?.type === "sleep";
+  if (!agent.action || mustCollapse(agent) || (!goingToBed && tick >= agent.nextDecisionTick)) {
     decide(agent, ctx);
     agent.nextDecisionTick = tick + DECISION_INTERVAL + ctx.world.rng.int(-10, 10);
   }

@@ -108,3 +108,16 @@ How the plan above was turned into numbers. All of these are tunable.
 - Footpaths: every step adds wear to a tile; wear fades by 7% a day, so a single pass vanishes within a day while regularly used routes build up. These become paths and roads later.
 - Ground storage: only ground that differs from what generation produces is kept and saved. Untouched ground is unloaded when no one is within about 100 tiles and regenerated exactly from the seed and generator version. Generator versions are never changed once used.
 - Death: the body stays where it fell for 3 world days. The chronicle records every death while the population is small. If no one is left, the world is archived and a new one begins (its generation number increases).
+
+## Implementation notes (step 3)
+
+- Nine base materials, each only eight property values (see `src/materials/registry.ts`): a soft nourishing growth; flexible fibers; a sturdy, burnable growth in groves; hard heavy stone-like material; hard sharp shards; shapeable earth by the water that reacts to energy; a rare glowing high-energy material; rare dense reactive deposits along ridges; and a rich nourishment that ripens only in the warm seasons. Ids are frozen; the creator can add more, stored in the world's save.
+- Abundance on the starting plain: about 11% of tiles hold the soft growth, 3% fibers, 1% rich nourishment, under 1% sturdy groves, a few stones and shards. Earth appears from the plain's edge by the water; glowing and reactive materials only far out.
+- Placement, like terrain, depends only on seed and position, has frozen versions, and untouched ground regenerates with identical materials.
+- Growing materials regrow on harvested tiles: soft growth recovers in about two days in the growth season, more slowly in peak and decline, not at all in the cold. Non-growing materials are gone once used up.
+- AIs learn only through their senses. Looking reveals size, growth and glow; handling reveals hardness, sharpness, flexibility and weight; tasting reveals nourishment and reactivity. Volatile materials harm when eaten (the "poisoning" cause of death).
+- New actions: eat (from hand or at known food), taste something new, examine something new, gather food to carry. Each AI remembers up to 24 places it saw food. Carrying is limited by weight (about 12 units of soft growth, or one stone).
+- Eating: one unit of a material with nourishment 1 restores 10% energy; a bite takes 90 world seconds.
+- Togetherness: at nightfall an AI alone walks to someone already settled for the night (within 60 tiles), or else home. Home drifts toward where it sleeps among others, so a group carries its home with it as it moves.
+- Cold: health cannot recover while freezing, and sleeping close to others halves the harm. Without shelter, the cold season kills those caught alone.
+- The chronicle records the first taste of each kind of material and the first meal.

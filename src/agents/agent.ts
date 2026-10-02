@@ -17,12 +17,47 @@ export interface Needs {
   curiosity: number;
 }
 
-export type DeathCause = "starvation" | "exhaustion" | "exposure" | "old age" | "injury";
+export type DeathCause = "starvation" | "exhaustion" | "exposure" | "old age" | "injury" | "poisoning";
 
 /** Health lost recently to each cause; used to say why an agent died. Decays over time. */
 export type DamageLog = Record<DeathCause, number>;
 
-export type ActionType = "sleep" | "seekFood" | "explore" | "socialize" | "idle";
+export type ActionType =
+  | "sleep"
+  | "eat"
+  | "seekFood"
+  | "taste"
+  | "inspect"
+  | "gather"
+  | "explore"
+  | "socialize"
+  | "idle";
+
+/** What one agent has learned about one kind of material, through its own senses. */
+export interface MaterialKnowledge {
+  firstSeenTick: number;
+  /** Picked up and handled: hardness, sharpness, flexibility and mass are known. */
+  handled: boolean;
+  /** Tasted: nourishment and reactivity are known. */
+  tasted: boolean;
+  /** Property values learned so far (only those its senses have revealed). */
+  props: Partial<Record<string, number>>;
+  timesEaten: number;
+}
+
+/** Something being carried. */
+export interface Carried {
+  material: number;
+  units: number;
+}
+
+/** A remembered place where food was seen. */
+export interface FoodSpot {
+  x: number;
+  y: number;
+  material: number;
+  tick: number;
+}
 
 export interface ActionState {
   type: ActionType;
@@ -32,6 +67,8 @@ export interface ActionState {
   targetY?: number;
   /** Another agent involved, if any. */
   targetId?: number;
+  /** The kind of material involved, if any. */
+  material?: number;
   /** When the action ends on its own, if it has a fixed duration. */
   untilTick?: number;
   /** When the route was last planned (used to avoid re-planning every tick). */
@@ -66,7 +103,12 @@ export interface AgentData {
   lastSeenOther: { x: number; y: number; tick: number } | null;
   /** Small fixed random offsets that make otherwise identical agents choose a little differently. */
   quirk: number[];
-  stats: { tilesWalked: number; daysAsleep: number };
+  /** What it has learned about each kind of material it has come across, by material id. */
+  knowledge: Record<string, MaterialKnowledge>;
+  carrying: Carried[];
+  /** Places food was seen recently (most recent last). */
+  foodSpots: FoodSpot[];
+  stats: { tilesWalked: number; daysAsleep: number; meals: number };
 }
 
 export const KNOWN_BLOCK_SIZE = 8;
@@ -108,7 +150,10 @@ export class Agent implements AgentData {
   known!: number[];
   lastSeenOther!: { x: number; y: number; tick: number } | null;
   quirk!: number[];
-  stats!: { tilesWalked: number; daysAsleep: number };
+  knowledge!: Record<string, MaterialKnowledge>;
+  carrying!: Carried[];
+  foodSpots!: FoodSpot[];
+  stats!: { tilesWalked: number; daysAsleep: number; meals: number };
 
   /** Fast lookup for `known`; rebuilt from the array on load. */
   private knownSet = new Set<number>();

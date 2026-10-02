@@ -18,18 +18,22 @@ import { Chronicle } from "../core/chronicle.ts";
 import { Rng, type RngState } from "../core/rng.ts";
 import { World, type WorldMeta } from "../core/world.ts";
 import { Population, type PopulationData } from "../agents/population.ts";
+import { MaterialRegistry, type RegistryData } from "../materials/registry.ts";
+import { placeMaterials } from "../materials/placement.ts";
 import { Chunk, kindOf, type LayerArray, type LayerKind } from "../world/chunk.ts";
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 2;
+export const SAVE_FORMAT_VERSION = 3;
 
 interface SavedChunk {
   cx: number;
   cy: number;
   gen: number;
+  /** Material placement version (absent in saves from before materials). */
+  mat?: number;
   edited: boolean;
   layers: Record<string, { kind: LayerKind; data: string }>;
 }
@@ -47,8 +51,11 @@ export interface SaveData {
   extinctTick: number | null;
   /** Chunks that differ from generated ground, saved in full. */
   chunks: SavedChunk[];
-  /** Ground seen but unchanged: generator version -> chunk keys. Regenerated on demand. */
+  /** Ground seen but unchanged: version code -> chunk keys. Regenerated on demand. */
   pristine: Record<string, number[]>;
+  materials: RegistryData;
+  /** Things that have happened at least once in this world. */
+  firsts: string[];
 }
 
 /** Upgrades older saves step by step. Key = format version being upgraded from. */
@@ -62,6 +69,25 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
     // Version 1 saved every chunk in full; treat them all as changed.
     chunks: data.chunks.map((c: any) => ({ ...c, edited: true })),
     pristine: {},
+  }),
+  // 2 -> 3: materials were added. Agents gain knowledge, carrying and food memory;
+  // ground saved without materials receives them on load.
+  2: (data) => ({
+    ...data,
+    format: 3,
+    materials: { types: [] },
+    firsts: [],
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({
+        ...a,
+        knowledge: {},
+        carrying: [],
+        foodSpots: [],
+        stats: { ...a.stats, meals: 0 },
+        damage: { ...a.damage, poisoning: 0 },
+      })),
+    },
   }),
 };
 
@@ -88,7 +114,7 @@ export function serializeWorld(world: World, speed: number): SaveData {
   for (const chunk of world.grid.changedChunks()) {
     const layers: SavedChunk["layers"] = {};
     for (const [name, array] of chunk.layers) layers[name] = { kind: kindOf(array), data: encodeLayer(array) };
-    chunks.push({ cx: chunk.cx, cy: chunk.cy, gen: chunk.generatorVersion, edited: chunk.edited, layers });
+    chunks.push({ cx: chunk.cx, cy: chunk.cy, gen: chunk.generatorVersion, mat: chunk.materialVersion, edited: chunk.edited, layers });
   }
   const pristine: Record<string, number[]> = {};
   for (const [key, version] of world.grid.pristineVersions()) (pristine[version] ??= []).push(key);
@@ -104,6 +130,8 @@ export function serializeWorld(world: World, speed: number): SaveData {
     extinctTick: world.extinctTick,
     chunks,
     pristine,
+    materials: world.materials.toJSON(),
+    firsts: [...world.firsts],
   };
 }
 
@@ -122,11 +150,15 @@ export function deserializeWorld(raw: any): { world: World; speed: number } {
   const chronicle = Chronicle.fromJSON(save.chronicle);
   const rng = new Rng(save.rng);
   const population = save.population ? Population.fromJSON(save.population) : new Population();
-  const world = World.restore(save.meta, save.tick, rng, chronicle, population, save.extinctTick, (w) => {
+  const materials = MaterialRegistry.fromJSON(save.materials);
+  const world = World.restore(save.meta, save.tick, rng, chronicle, population, materials, save.extinctTick, (w) => {
+    for (const key of save.firsts) w.firsts.add(key);
     for (const saved of save.chunks) {
       const chunk = new Chunk(saved.cx, saved.cy, saved.gen);
       for (const [name, layer] of Object.entries(saved.layers)) chunk.setLayer(name, decodeLayer(layer.kind, layer.data));
       chunk.edited = saved.edited;
+      if (saved.mat) chunk.materialVersion = saved.mat;
+      else placeMaterials(chunk, w.meta.seed); // ground from before materials existed
       chunk.recountWear();
       chunk.dirty = false;
       w.grid.putChunk(chunk);

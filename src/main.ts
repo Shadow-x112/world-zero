@@ -15,7 +15,7 @@ import { SPEEDS } from "./core/constants.ts";
 import { Runner, isSpeed, type Speed } from "./core/runner.ts";
 import { formatCalendar } from "./core/time.ts";
 import { World } from "./core/world.ts";
-import { agentDetail, agentLine } from "./inspect.ts";
+import { agentDetail, agentLine, materialsTable } from "./inspect.ts";
 import { Store } from "./persist/store.ts";
 
 const AUTOSAVE_SECONDS = 60;
@@ -26,6 +26,7 @@ const HELP = `Commands:
   status            date, time, light, speed, population
   ais               every living AI, one line each
   ai <id>           everything about one AI (e.g. "ai 7")
+  materials         every kind of material and its true properties
   chronicle [n]     the last n important events (default 10)
   pause / resume    stop or restart time
   speed <n>         ${SPEEDS.filter((s) => s > 0).join(", ")}
@@ -210,6 +211,9 @@ async function main(): Promise<void> {
           }
           break;
         }
+        case "materials":
+          console.log(materialsTable(w));
+          break;
         case "pause":
           runner.setSpeed(0);
           console.log("Paused.");

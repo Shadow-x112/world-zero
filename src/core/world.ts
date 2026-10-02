@@ -11,6 +11,8 @@ import { FLAT_RADIUS } from "../world/generator.ts";
 import { Population } from "../agents/population.ts";
 import { AgentSystem } from "../agents/system.ts";
 import { GridMaintenance } from "../world/maintenance.ts";
+import { MaterialRegistry } from "../materials/registry.ts";
+import { Regrowth } from "../materials/regrowth.ts";
 
 export interface System {
   readonly name: string;
@@ -36,15 +38,26 @@ export class World {
   readonly rng: Rng;
   readonly chronicle: Chronicle;
   readonly population: Population;
+  readonly materials: MaterialRegistry;
   readonly events = new EventBus();
   tick: number;
   /** When the last agent died, or null while anyone lives. */
   extinctTick: number | null = null;
+  /** Things that have happened at least once (used to spot firsts for the chronicle). */
+  readonly firsts = new Set<string>();
   calendar: Calendar;
   private systems: System[] = [];
 
-  constructor(meta: WorldMeta, tick: number, rng: Rng, chronicle: Chronicle, population = new Population()) {
+  constructor(
+    meta: WorldMeta,
+    tick: number,
+    rng: Rng,
+    chronicle: Chronicle,
+    population = new Population(),
+    materials = new MaterialRegistry(),
+  ) {
     this.meta = meta;
+    this.materials = materials;
     this.tick = tick;
     this.rng = rng;
     this.chronicle = chronicle;
@@ -58,6 +71,7 @@ export class World {
     this.addSystem(new CalendarSystem());
     this.addSystem(new AgentSystem());
     this.addSystem(new GridMaintenance());
+    this.addSystem(new Regrowth());
   }
 
   /** A world rebuilt from saved parts (see persist/store.ts). */
@@ -67,10 +81,11 @@ export class World {
     rng: Rng,
     chronicle: Chronicle,
     population: Population,
+    materials: MaterialRegistry,
     extinctTick: number | null,
     fill: (world: World) => void,
   ): World {
-    const world = new World(meta, tick, rng, chronicle, population);
+    const world = new World(meta, tick, rng, chronicle, population, materials);
     world.extinctTick = extinctTick;
     fill(world);
     world.start();
@@ -98,6 +113,13 @@ export class World {
     );
     world.start();
     return world;
+  }
+
+  /** Returns true the first time it is called with a given key in this world's history. */
+  isFirst(key: string): boolean {
+    if (this.firsts.has(key)) return false;
+    this.firsts.add(key);
+    return true;
   }
 
   addSystem(system: System): void {
