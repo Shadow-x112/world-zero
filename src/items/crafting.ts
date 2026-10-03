@@ -7,11 +7,14 @@
 // - BUNDLE: enough flexible stuff woven into itself becomes a carrier.
 // - SHAPE: striking a hard thing with something hard and heavy knocks mass
 //   off and can raise an edge. Chancy; the target can be ruined.
-// (MIX and HEAT arrive with parts 2 and 3 of this step.)
+// - MIX: shapeable reactive earth worked together with fibers makes a wet
+//   paste. Left for some hours it dries into hard brick, a building material
+//   that exists nowhere in nature.
+// (HEAT arrives with part 3 of this step.)
 
 import type { Rng } from "../core/rng.ts";
 import type { World } from "../core/world.ts";
-import type { MaterialType } from "../materials/registry.ts";
+import { BRICK_ID, type MaterialType } from "../materials/registry.ts";
 import type { Agent } from "../agents/agent.ts";
 import { breakPower, carryBonus, cutPower, emptyProps, nextItemId, type Item } from "./item.ts";
 
@@ -36,10 +39,19 @@ export const SHAPEABLE_HARDNESS = 0.5;
 export const SHAPE_CHANCE = 0.45;
 /** Chance that shaping an existing item ruins it. */
 export const SHAPE_RUIN_CHANCE = 0.2;
+/** What can be mixed: soft, shapeable, chemically lively (the wet earth). */
+export function mixable(type: MaterialType): boolean {
+  return type.props.reactivity >= 0.4 && type.props.hardness < 0.4 && type.props.flexibility >= 0.3;
+}
+/** Units of earth one batch takes, and the bricks it dries into. */
+export const MIX_EARTH_UNITS = 2;
+export const MIX_YIELD_BRICKS = 2;
+/** World seconds a wet batch takes to dry on its own (fire will hurry it, later). */
+export const DRY_TICKS = 6 * 3600;
 /** World seconds one attempt takes. */
 export const TINKER_TICKS = 1500;
 
-export type Verb = "bind" | "bundle" | "shape";
+export type Verb = "bind" | "bundle" | "shape" | "mix";
 
 export interface Attempt {
   /** Stable key for the agent's memory of what it has tried. */
@@ -129,6 +141,7 @@ export function possibleAttempts(agent: Agent, world: World): Attempt[] {
   const poles: number[] = [];
   const shapeables: number[] = [];
   const strikers: number[] = [];
+  const earths: number[] = [];
   for (const c of agent.carrying) {
     const type = materials.get(c.material);
     if (!type) continue;
@@ -140,6 +153,7 @@ export function possibleAttempts(agent: Agent, world: World): Attempt[] {
     if (polelike(type)) poles.push(c.material);
     if (type.props.hardness >= SHAPEABLE_HARDNESS) shapeables.push(c.material);
     if (type.props.hardness >= STRIKER_HARDNESS && type.props.mass >= STRIKER_MASS) strikers.push(c.material);
+    if (mixable(type) && c.units >= MIX_EARTH_UNITS) earths.push(c.material);
   }
 
   for (const binder of binders) {
@@ -170,6 +184,30 @@ export function possibleAttempts(agent: Agent, world: World): Attempt[] {
           resolve: (world, agent) => bindResult(world, agent, binder.id, binder.units, head, pole),
         });
       }
+    }
+  }
+
+  // Work wet earth together with fibers into a paste.
+  for (const binder of binders) {
+    for (const earth of earths) {
+      out.push({
+        key: `mix:${earth}+${binder.id}`,
+        verb: "mix",
+        consumes: { [binder.id]: 1, [earth]: MIX_EARTH_UNITS },
+        resolve: (world, agent) => {
+          const earthType = world.materials.require(earth);
+          const binderType = world.materials.require(binder.id);
+          const item = newItem(world, agent, { [earth]: MIX_EARTH_UNITS, [binder.id]: 1 });
+          const p = item.props;
+          p.hardness = 0.1;
+          p.flexibility = 0.5;
+          p.mass = earthType.props.mass * MIX_EARTH_UNITS + binderType.props.mass;
+          p.reactivity = earthType.props.reactivity * 0.5;
+          item.dryAtTick = world.tick + DRY_TICKS;
+          item.yields = { material: BRICK_ID, units: MIX_YIELD_BRICKS };
+          return item;
+        },
+      });
     }
   }
 

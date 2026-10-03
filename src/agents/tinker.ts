@@ -10,8 +10,10 @@ import { describe } from "../materials/registry.ts";
 import { describeItem } from "../items/item.ts";
 import {
   BINDER_FLEXIBILITY,
+  MIX_EARTH_UNITS,
   PART_HARDNESS,
   TINKER_TICKS,
+  mixable,
   interestIn,
   performAttempt,
   possibleAttempts,
@@ -42,13 +44,15 @@ function missingIngredient(agent: Agent, ctx: AgentContext): { x: number; y: num
   const world = ctx.world;
   let hasBinder = false;
   let hasHard = false;
+  let hasEarth = false;
   for (const c of agent.carrying) {
     const type = world.materials.get(c.material);
     if (!type) continue;
     if (type.props.flexibility >= BINDER_FLEXIBILITY && c.units >= 2) hasBinder = true;
     if (type.props.hardness >= PART_HARDNESS) hasHard = true;
+    if (mixable(type) && c.units >= MIX_EARTH_UNITS) hasEarth = true;
   }
-  if (hasBinder && hasHard) return null;
+  if (hasBinder && (hasHard || hasEarth)) return null;
   const radius = 10;
   const grid = world.grid;
   const ax = agent.tileX;
@@ -65,7 +69,10 @@ function missingIngredient(agent: Agent, ctx: AgentContext): { x: number; y: num
       if (id === 0 || grid.get("amount", x, y) === 0) continue;
       const type = world.materials.get(id);
       if (!type) continue;
-      const wanted = (!hasBinder && type.props.flexibility >= BINDER_FLEXIBILITY) || (!hasHard && type.props.hardness >= PART_HARDNESS);
+      const wanted =
+        (!hasBinder && type.props.flexibility >= BINDER_FLEXIBILITY) ||
+        (hasBinder && !hasHard && type.props.hardness >= PART_HARDNESS) ||
+        (hasBinder && !hasEarth && mixable(type));
       if (!wanted || roomFor(agent, world, type) === 0) continue;
       if (!best || d2 < best.d2) best = { x, y, material: id, d2 };
     }
@@ -154,6 +161,11 @@ function recordFirsts(agent: Agent, ctx: AgentContext, result: ReturnType<typeof
     });
   } else if (verb === "shape" && world.isFirst("shaped")) {
     world.chronicle.add(world.tick, "crafting", `${agent.label} struck stone against stone until an edge appeared: ${what}.`, {
+      agentId: agent.id,
+      item: result.id,
+    });
+  } else if (verb === "mix" && world.isFirst("paste")) {
+    world.chronicle.add(world.tick, "crafting", `${agent.label} worked wet earth and fibers together into ${what}.`, {
       agentId: agent.id,
       item: result.id,
     });

@@ -151,3 +151,10 @@ How the plan above was turned into numbers. All of these are tunable.
 - Tinkering is the second outlet for curiosity (with exploring), so settled groups turn inventive; and ground not seen for about 12 days fades back to unknown, so exploring never fully starves either.
 - Belongings fall where an AI dies. Anyone walking over a dropped item picks it up if there is room and it holds nothing of the kind, so a dead maker's tool can outlive them in a stranger's hands.
 - The founders now number 50 (was 20).
+
+## Implementation notes (step 4b part 2: mix - paste and bricks)
+
+- The MIX rule: shapeable, chemically lively earth (the wet earth by the water) worked together with fibers makes a wet paste. Left for about six world hours - carried, or set down anywhere - it dries into bricks (base material 10), a hard building material the world never produces on its own. Fire will hurry the drying, later.
+- Bricks build walls that keep out all the cold a wall can (quality 1.0), stand for about 200 days (between grove poles and stone), and cannot span as roofs: too rigid. Brick walls do not burn, which will matter once fire exists.
+- A batch is heavy: two units of earth make two bricks, a full armload without a woven carrier. Earth lives by the water, so brick-making pulls people toward the water's edge and carriers become worth their weight.
+- Nothing points at any of this: an AI discovers mixing by being restless near the water with fibers in hand, and bricks only spread because walls of them outlast everything their makers can otherwise afford.

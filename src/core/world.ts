@@ -15,6 +15,7 @@ import { MaterialRegistry } from "../materials/registry.ts";
 import { Regrowth } from "../materials/regrowth.ts";
 import { Structures } from "../building/structures.ts";
 import { GroundItems } from "../items/item.ts";
+import { Drying } from "../items/drying.ts";
 import { Weather } from "../world/weather.ts";
 
 export interface System {
@@ -81,6 +82,7 @@ export class World {
     this.addSystem(new Regrowth());
     this.addSystem(new Structures());
     this.addSystem(new Weather());
+    this.addSystem(new Drying());
   }
 
   /** A world rebuilt from saved parts (see persist/store.ts). */

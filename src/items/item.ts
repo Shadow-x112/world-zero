@@ -25,6 +25,10 @@ export interface Item {
   madeTick: number;
   /** Times its holder was measurably helped by it. */
   uses: number;
+  /** Still wet until this tick, after which it becomes `yields` (a mixed paste drying). */
+  dryAtTick?: number;
+  /** What the thing turns into when it dries: loose units of a material. */
+  yields?: { material: number; units: number };
 }
 
 /** An item lying in the world. */
@@ -46,7 +50,8 @@ export function describeItem(item: Item): string {
   const base = describe(item.props).replace(/^a /, "").replace(/ material$/, " thing");
   const reach = item.props.reach > 0 ? " with reach" : "";
   const carry = carryBonus(item) > 0 ? " for carrying" : "";
-  return `a ${base}${reach}${carry}`;
+  const wet = item.dryAtTick !== undefined ? ", still wet" : "";
+  return `a ${base}${reach}${carry}${wet}`;
 }
 
 // --- What an item is good at (all derived, nothing declared) -------------------

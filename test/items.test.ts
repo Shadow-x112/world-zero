@@ -22,6 +22,8 @@ import {
   toolDidWork,
 } from "../src/agents/foraging.ts";
 import { KNOWN_FADE_DAYS } from "../src/agents/system.ts";
+import { blockLifeDays, blockQuality, roofSpan } from "../src/building/structures.ts";
+import { DRYING_INTERVAL, Drying } from "../src/items/drying.ts";
 import { serializeWorld, deserializeWorld } from "../src/persist/store.ts";
 import type { Agent } from "../src/agents/agent.ts";
 
@@ -226,4 +228,51 @@ test("a bitter-first-winter world at 50 founders still runs fast enough", () => 
   for (let i = 0; i < 3600; i++) world.step();
   const perTick = (performance.now() - t0) / 3600;
   assert.ok(perTick < 1.5, `one tick costs ${perTick.toFixed(3)}ms with 50 agents`);
+});
+
+test("wet earth and fibers mix into a paste that dries into bricks", () => {
+  const { world, agent } = worldWithAgent(14);
+  const EARTH = 6;
+  give(agent, EARTH, 2);
+  give(agent, FIBER, 2);
+  const attempt = attemptByKey(world, agent, `mix:${EARTH}+`);
+  assert.ok(attempt, "mixing offers itself");
+  const paste = performAttempt(attempt!, world, agent)!;
+  assert.ok(paste.dryAtTick! > world.tick, "wet for hours");
+  assert.match(describeItem(paste), /wet/);
+  // Hours pass; the drying system turns it into carried bricks.
+  world.tick = Math.ceil((paste.dryAtTick! + 1) / DRYING_INTERVAL) * DRYING_INTERVAL;
+  new Drying().update(world);
+  assert.equal(agent.items.includes(paste), false, "the batch is gone");
+  const bricks = agent.carrying.find((c) => c.material === 10);
+  const onGround = world.grid.get("material", agent.tileX, agent.tileY) === 10;
+  assert.ok(bricks || onGround, "bricks exist, in hand or at its feet");
+  assert.ok(world.firsts.has("brick"));
+  assert.ok(world.chronicle.all().some((e) => /bricks/.test(e.text)));
+});
+
+test("a paste left on the ground dries into a pile of bricks there", () => {
+  const { world, agent } = worldWithAgent(15);
+  const EARTH = 6;
+  give(agent, EARTH, 2);
+  give(agent, FIBER, 2);
+  const paste = performAttempt(attemptByKey(world, agent, "mix:")!, world, agent)!;
+  agent.items = [];
+  world.grid.set("material", 40, 40, 0);
+  world.grid.set("amount", 40, 40, 0);
+  world.groundItems.drop(40, 40, paste);
+  world.tick = Math.ceil((paste.dryAtTick! + 1) / DRYING_INTERVAL) * DRYING_INTERVAL;
+  new Drying().update(world);
+  assert.equal(world.groundItems.at(40, 40).length, 0);
+  assert.equal(world.grid.get("material", 40, 40), 10);
+  assert.equal(world.grid.get("amount", 40, 40), 2);
+});
+
+test("bricks build walls that outlast grove poles and never roof (too rigid)", () => {
+  const world = World.create({ seed: 1 });
+  const brick = world.materials.require(10);
+  const grove = world.materials.require(GROVE);
+  assert.ok(blockLifeDays(brick) > blockLifeDays(grove) * 1.5, "bricks outlast poles");
+  assert.equal(roofSpan(brick), 0, "bricks cannot span");
+  assert.equal(blockQuality(brick), 1, "a brick wall keeps all the cold out");
 });

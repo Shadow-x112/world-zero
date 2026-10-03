@@ -66,7 +66,13 @@ export const BASE_MATERIALS: readonly MaterialType[] = [
   { id: 8, maxAmount: 20, props: { hardness: 0.6, sharpness: 0.1, flexibility: 0.05, mass: 0.8, energy: 0.1, nourishment: 0, growth: 0, reactivity: 0.85 } },
   // 9. Rich nourishment. Uncommon; ripe only in the warm seasons.
   { id: 9, maxAmount: 6, ripeIn: ["growth", "peak"], props: { hardness: 0.05, sharpness: 0, flexibility: 0.2, mass: 0.1, energy: 0.3, nourishment: 0.95, growth: 0.4, reactivity: 0.05 } },
+  // 10. Dried earth (brick). Never occurs naturally: only mixing the wet earth
+  // with fibers and letting the paste dry produces it (see items/crafting.ts).
+  { id: 10, maxAmount: 30, props: { hardness: 0.72, sharpness: 0.05, flexibility: 0, mass: 0.6, energy: 0, nourishment: 0, growth: 0, reactivity: 0.05 } },
 ];
+
+/** The id mixing produces. Part of the frozen base set. */
+export const BRICK_ID = 10;
 
 export function regrows(type: MaterialType): boolean {
   return type.props.growth > 0.1;

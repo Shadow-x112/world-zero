@@ -47,7 +47,7 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
    - 4a. **Placing material and shelter** ✅ (walls, roofs, the nesting instinct, sleeping where it's warmest)
    - 4b. Combining, tools, fire and usefulness
      - **Items, tinkering, bind + shape, tools that matter** ✅
-     - Mix: paste and bricks
+     - **Mix: paste and bricks** ✅
      - Fire: dangerous from day one
      - Cooking and medicine
 5. Learning: specialization, personality, teaching, emergent language

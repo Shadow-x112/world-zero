@@ -12,7 +12,7 @@
 
 import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { World } from "../core/world.ts";
-import { describe, type MaterialType } from "../materials/registry.ts";
+import { BRICK_ID, describe, type MaterialType } from "../materials/registry.ts";
 import {
   addToBlock,
   blockAt,
@@ -219,6 +219,11 @@ export function choosePlacement(agent: Agent, world: World, options: Placement[]
 
 function recordFirsts(agent: Agent, world: World, p: Placement, type: MaterialType, nest: Nest): void {
   const what = describe(type.props);
+  if (type.id === BRICK_ID && world.isFirst("brickWall")) {
+    world.chronicle.add(world.tick, "building", `${agent.label} laid bricks into a wall: the first made material put to work.`, {
+      agentId: agent.id, x: p.x, y: p.y,
+    });
+  }
   if (p.level === "wall" && world.isFirst("block")) {
     world.chronicle.add(world.tick, "building", `${agent.label} piled ${what} beside the place where it sleeps: the first thing anyone has built.`, {
       agentId: agent.id, x: p.x, y: p.y, material: type.id,
