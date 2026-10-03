@@ -34,10 +34,11 @@ export class Regrowth implements System {
     for (const chunk of world.grid.changedChunks()) {
       const material = chunk.layer("material");
       const amount = chunk.layer("amount");
+      const wall = chunk.wallLayer; // nothing grows under a wall
       let changed = false;
       for (let i = 0; i < material.length; i++) {
         const id = material[i];
-        if (id === 0) continue;
+        if (id === 0 || (wall !== null && wall[i] !== 0)) continue;
         const type = registry.get(id);
         if (!type || !regrows(type) || amount[i] >= type.maxAmount) continue;
         if (type.ripeIn && !isRipe(type, season)) continue;

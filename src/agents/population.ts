@@ -101,7 +101,14 @@ export class Population {
       knowledge: {},
       carrying: [],
       foodSpots: [],
-      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0 },
+      coldMemory: 0,
+      nest: null,
+      lastSleep: null,
+      buildLeaning: { wall: 1, roof: 1 },
+      placedSinceWake: { wall: 0, roof: 0 },
+      feltShelter: -1,
+      shelterSpots: [],
+      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0 },
     };
     const agent = new Agent(data);
     this.add(agent);

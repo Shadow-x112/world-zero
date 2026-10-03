@@ -38,12 +38,16 @@ export const RATES = {
   starvationDamage: 1 / 48,
   /** With no rest left, health fails over about 3 days (and the agent collapses asleep). */
   exhaustionDamage: 1 / 72,
-  /** A cold-season night in the open costs health; shelter will prevent it. */
+  /** A cold-season night in the open costs health; shelter reduces it in proportion. */
   exposureDamage: 1 / 40,
   /** Light below this counts as night for exposure. */
   exposureLightThreshold: 0.3,
   /** Sleeping close to others cuts exposure harm to this fraction. */
   huddleFactor: 0.5,
+  /** A body can still heal in the cold if what reaches it is below this share of the open-air chill. */
+  warmEnough: 0.2,
+  /** Sleep restores rest this much faster when fully sheltered (in proportion to shelter). */
+  shelterRestBonus: 0.5,
 
   /** Health recovers over about 2 days when fed and rested. */
   healthRecover: 1 / 48,
@@ -65,6 +69,14 @@ export function healthCeiling(lifeFraction: number): number {
   return Math.max(0, 1 - (lifeFraction - OLD_AGE_START) / (OLD_AGE_END - OLD_AGE_START));
 }
 
+/** How much of the memory of cold remains after a world day, by season. */
+export const COLD_MEMORY_KEEP: Record<string, number> = { growth: 0.95, peak: 0.95, decline: 0.99, cold: 0.99 };
+/** Remembered cold is capped here (in units of health lost). */
+export const COLD_MEMORY_MAX = 1;
+const COLD_KEEP_PER_TICK: Record<string, number> = Object.fromEntries(
+  Object.entries(COLD_MEMORY_KEEP).map(([season, keep]) => [season, Math.pow(keep, 1 / TICKS_PER_DAY)]),
+);
+
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
@@ -72,8 +84,8 @@ function clamp01(v: number): number {
 export interface BodyContext {
   /** Whether at least one other agent is within company range. */
   hasCompany: boolean;
-  /** Whether the agent is under shelter (always false until building exists). */
-  sheltered: boolean;
+  /** How sheltered the agent's tile is, 0 (open) to 1 (enclosed and covered). */
+  shelter: number;
 }
 
 /**
@@ -94,7 +106,7 @@ export function updateBody(agent: Agent, world: World, ctx: BodyContext): DeathC
 
   // Rest
   if (agent.asleep) {
-    needs.rest = clamp01(needs.rest + RATES.restRecover * (ctx.sheltered ? 1.5 : 1) * h);
+    needs.rest = clamp01(needs.rest + RATES.restRecover * (1 + RATES.shelterRestBonus * ctx.shelter) * h);
   } else {
     needs.rest = clamp01(needs.rest - RATES.restDrain * h);
   }
@@ -117,12 +129,21 @@ export function updateBody(agent: Agent, world: World, ctx: BodyContext): DeathC
   };
   if (needs.energy <= 0) hurt("starvation", RATES.starvationDamage * h);
   if (needs.rest <= 0) hurt("exhaustion", RATES.exhaustionDamage * h);
-  // Cold-season nights in the open: huddling with others halves the harm; shelter prevents it.
-  const exposed = cold && cal.light < RATES.exposureLightThreshold && !ctx.sheltered;
-  if (exposed) hurt("exposure", RATES.exposureDamage * (ctx.hasCompany ? RATES.huddleFactor : 1) * h);
+  // Cold-season nights: shelter keeps out its share of the chill, and huddling halves what is left.
+  // The harm is remembered, and that memory is what drives the urge to build.
+  let chill = 0;
+  if (cold && cal.light < RATES.exposureLightThreshold) {
+    chill = (1 - Math.min(1, ctx.shelter)) * (ctx.hasCompany ? RATES.huddleFactor : 1);
+    if (chill > 0) {
+      const amount = RATES.exposureDamage * chill * h;
+      hurt("exposure", amount);
+      agent.coldMemory = Math.min(COLD_MEMORY_MAX, agent.coldMemory + amount);
+    }
+  }
+  agent.coldMemory *= COLD_KEEP_PER_TICK[cal.season] ?? 1;
 
   // A freezing body can't heal.
-  const canRecover = !exposed && needs.energy > RATES.recoverThreshold && needs.rest > RATES.recoverThreshold;
+  const canRecover = chill < RATES.warmEnough && needs.energy > RATES.recoverThreshold && needs.rest > RATES.recoverThreshold;
   if (canRecover) agent.health += RATES.healthRecover * h;
 
   // Old age lowers the ceiling health can recover to, and eventually takes it.

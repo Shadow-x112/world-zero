@@ -29,6 +29,7 @@ export type ActionType =
   | "taste"
   | "inspect"
   | "gather"
+  | "build"
   | "explore"
   | "socialize"
   | "idle";
@@ -73,6 +74,32 @@ export interface ActionState {
   untilTick?: number;
   /** When the route was last planned (used to avoid re-planning every tick). */
   plannedTick?: number;
+  /** Which stage of a multi-stage action it is in. */
+  phase?: string;
+  /** Going to bed: true when heading for a sheltered place rather than to company. */
+  toShelter?: boolean;
+}
+
+/** The place an AI has chosen to sleep and build around. */
+export interface Nest {
+  x: number;
+  y: number;
+  /** When it last slept there. */
+  lastSlept: number;
+}
+
+/** A remembered sheltered place (somewhere covered that it has seen). */
+export interface ShelterSpot {
+  x: number;
+  y: number;
+  value: number;
+  tick: number;
+}
+
+/** Leaning toward each kind of placement, learned from how much warmer the result felt. */
+export interface BuildLeaning {
+  wall: number;
+  roof: number;
 }
 
 export interface AgentData {
@@ -108,7 +135,19 @@ export interface AgentData {
   carrying: Carried[];
   /** Places food was seen recently (most recent last). */
   foodSpots: FoodSpot[];
-  stats: { tilesWalked: number; daysAsleep: number; meals: number };
+  /** Harm remembered from cold nights; fades in warm seasons. Drives the urge to build. */
+  coldMemory: number;
+  /** Where it sleeps and builds, once it has started building. */
+  nest: Nest | null;
+  /** Where it last woke up. */
+  lastSleep: { x: number; y: number } | null;
+  buildLeaning: BuildLeaning;
+  /** Placements made since it last woke at its nest (credited against the next night's warmth). */
+  placedSinceWake: BuildLeaning;
+  /** Shelter felt at the nest on the last waking there (-1 = never). */
+  feltShelter: number;
+  shelterSpots: ShelterSpot[];
+  stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number };
 }
 
 export const KNOWN_BLOCK_SIZE = 8;
@@ -153,7 +192,14 @@ export class Agent implements AgentData {
   knowledge!: Record<string, MaterialKnowledge>;
   carrying!: Carried[];
   foodSpots!: FoodSpot[];
-  stats!: { tilesWalked: number; daysAsleep: number; meals: number };
+  coldMemory!: number;
+  nest!: Nest | null;
+  lastSleep!: { x: number; y: number } | null;
+  buildLeaning!: BuildLeaning;
+  placedSinceWake!: BuildLeaning;
+  feltShelter!: number;
+  shelterSpots!: ShelterSpot[];
+  stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number };
 
   /** Fast lookup for `known`; rebuilt from the array on load. */
   private knownSet = new Set<number>();

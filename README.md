@@ -25,6 +25,7 @@ While it runs, type a command and press Enter:
 | `ais` | Every living AI, one line each |
 | `ai <id>` | Everything about one AI, e.g. `ai 7`: needs, what it carries, what it has learned |
 | `materials` | Every kind of material and its true properties |
+| `shelters` | Everything built, and where each AI sleeps |
 | `pause` / `resume` | Stop or restart time |
 | `speed <n>` | 1, 2, 5, 10, 25, 50 or 100 |
 | `save` | Save now (it also autosaves every minute) |
@@ -40,8 +41,10 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
 
 1. **Simulation core: grid, time, save/load** ✅
 2. **AI agents: needs, movement, death** ✅
-3. **Materials: properties, placement, abundance** ✅ (no shelter until step 4, so the cold season still kills some of them)
+3. **Materials: properties, placement, abundance** ✅
 4. Crafting and building
+   - 4a. **Placing material and shelter** ✅ (walls, roofs, the nesting instinct, sleeping where it's warmest)
+   - 4b. Combining, tools, fire and usefulness
 5. Learning: specialization, personality, teaching, emergent language
 6. Server deployment (24/7)
 7. 3D viewer, speed controls, AI inspector, chronicle
@@ -51,8 +54,9 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
 
 ```
 src/core/      time, calendar, randomness, world, runner, chronicle, events
-src/agents/    the AIs: bodies and needs, decisions, actions, foraging, pathfinding, population
+src/agents/    the AIs: bodies and needs, decisions, actions, foraging, building, pathfinding, population
 src/materials/ material properties, placement in the world, regrowth
+src/building/  structures: walls, roofs, shelter, weathering
 src/world/     endless chunked grid, world generation, grid upkeep
 src/persist/   saving, loading, backups
 src/inspect.ts text descriptions of AIs

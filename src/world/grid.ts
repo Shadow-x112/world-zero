@@ -121,6 +121,14 @@ export class Grid {
     return chunk.layer(layer)[(y - cy * CHUNK_SIZE) * CHUNK_SIZE + (x - cx * CHUNK_SIZE)];
   }
 
+  /** Like get, but reads 0 from a layer the chunk doesn't have instead of creating it. */
+  peek(layer: string, x: number, y: number): number {
+    const cx = Math.floor(x / CHUNK_SIZE);
+    const cy = Math.floor(y / CHUNK_SIZE);
+    const array = this.getChunk(cx, cy).peekLayer(layer);
+    return array ? array[(y - cy * CHUNK_SIZE) * CHUNK_SIZE + (x - cx * CHUNK_SIZE)] : 0;
+  }
+
   set(layer: string, x: number, y: number, value: number): void {
     const chunk = this.getChunk(Math.floor(x / CHUNK_SIZE), Math.floor(y / CHUNK_SIZE));
     const array = chunk.layer(layer);
@@ -151,9 +159,15 @@ export class Grid {
     return this.getChunk(cx, cy).terrainLayer[(y - cy * CHUNK_SIZE) * CHUNK_SIZE + (x - cx * CHUNK_SIZE)];
   }
 
-  /** Whether a tile can be stood on (later systems will add more rules). */
+  /** Whether a tile can be stood on: open ground with nothing built on it. */
   isWalkable(x: number, y: number): boolean {
-    return this.terrainAt(x, y) === Terrain.open;
+    const cx = Math.floor(x / CHUNK_SIZE);
+    const cy = Math.floor(y / CHUNK_SIZE);
+    const chunk = this.getChunk(cx, cy);
+    const i = (y - cy * CHUNK_SIZE) * CHUNK_SIZE + (x - cx * CHUNK_SIZE);
+    if (chunk.terrainLayer[i] !== Terrain.open) return false;
+    const wall = chunk.wallLayer;
+    return wall === null || wall[i] === 0;
   }
 
   /** Makes sure every chunk within `radius` tiles of a point exists. */

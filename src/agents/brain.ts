@@ -7,6 +7,7 @@ import type { ActionType, Agent } from "./agent.ts";
 import { ACTIONS, type AgentContext } from "./actions.ts";
 import { GATHER_TARGET, carriedFoodUnits, hasFoodOption, survey } from "./foraging.ts";
 import { mustCollapse } from "./needs.ts";
+import { buildUrge } from "./building.ts";
 import { sightRadius } from "./senses.ts";
 
 /** How often an awake agent reconsiders, in ticks (world seconds). */
@@ -15,8 +16,10 @@ export const DECISION_INTERVAL = 60;
 export const INERTIA = 0.08;
 /** Random variation added to each score at each decision. */
 export const NOISE = 0.04;
+/** How strongly a full urge to build competes with other needs. */
+export const BUILD_WEIGHT = 0.6;
 
-const ORDER: ActionType[] = ["sleep", "eat", "seekFood", "taste", "inspect", "gather", "explore", "socialize", "idle"];
+const ORDER: ActionType[] = ["sleep", "eat", "seekFood", "taste", "inspect", "gather", "build", "explore", "socialize", "idle"];
 
 export type Scores = Record<ActionType, number>;
 
@@ -52,13 +55,22 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
     gather = 0.1 + (season === "decline" || season === "cold" ? 0.15 : 0);
   }
 
+  // Remembered cold draws it to build around its sleeping place, above all late in the day.
+  let build = 0;
+  const urge = buildUrge(agent, world);
+  if (urge > 0.05 && light >= 0.35 && n.energy > 0.35 && n.rest > 0.2) {
+    const cal = world.calendar;
+    const hoursLeft = cal.sunsetHour - (cal.hour + cal.minute / 60);
+    build = urge * BUILD_WEIGHT * (hoursLeft > 0 && hoursLeft <= 4 ? 1 : 0.4);
+  }
+
   const explore = restless * 0.65 * (light < 0.3 ? 0.25 : 1);
 
   const knowsSomeone =
     agent.lastSeenOther !== null || ctx.index.any(agent.x, agent.y, sightRadius(light), agent);
   const socialize = knowsSomeone ? Math.pow(1 - n.social, 1.2) * 0.75 : 0;
 
-  return { sleep, eat, seekFood, taste, inspect, gather, explore, socialize, idle: 0.08 };
+  return { sleep, eat, seekFood, taste, inspect, gather, build, explore, socialize, idle: 0.08 };
 }
 
 /** Updates what the agent remembers about others' whereabouts. */
@@ -100,6 +112,7 @@ export function decide(agent: Agent, ctx: AgentContext): void {
   const current = agent.action?.type;
   for (const { type } of ranked) {
     if (type === current) return; // keep doing what it was doing
+    if (type === "build" && scores.build <= 0) continue; // only an urge to build leads to building
     if (startAction(agent, ctx, type)) return;
   }
   startAction(agent, ctx, "idle");

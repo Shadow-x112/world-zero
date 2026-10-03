@@ -15,7 +15,8 @@ import { SPEEDS } from "./core/constants.ts";
 import { Runner, isSpeed, type Speed } from "./core/runner.ts";
 import { formatCalendar } from "./core/time.ts";
 import { World } from "./core/world.ts";
-import { agentDetail, agentLine, materialsTable } from "./inspect.ts";
+import { agentDetail, agentLine, materialsTable, sheltersReport } from "./inspect.ts";
+import { countBlocks } from "./building/structures.ts";
 import { Store } from "./persist/store.ts";
 
 const AUTOSAVE_SECONDS = 60;
@@ -27,6 +28,7 @@ const HELP = `Commands:
   ais               every living AI, one line each
   ai <id>           everything about one AI (e.g. "ai 7")
   materials         every kind of material and its true properties
+  shelters          everything built, and where each AI sleeps
   chronicle [n]     the last n important events (default 10)
   pause / resume    stop or restart time
   speed <n>         ${SPEEDS.filter((s) => s > 0).join(", ")}
@@ -62,6 +64,8 @@ function status(runner: Runner): string {
     `${pop.count} alive (${asleep} asleep), ${pop.deaths} dead`,
     `${w.grid.chunkCount} chunks loaded`,
   ];
+  const built = countBlocks(w.grid);
+  if (built.walls + built.roofs > 0) parts.splice(4, 0, `${built.walls} walls, ${built.roofs} roofs`);
   if (w.meta.generation > 1) parts.unshift(`World ${w.meta.generation}`);
   if (runner.measuredTps > 0) parts.push(`${runner.measuredTps.toFixed(1)} ticks/s`);
   if (runner.lagging || runner.droppedTicks > 0) parts.push(`LAGGING (${runner.droppedTicks} ticks dropped)`);
@@ -213,6 +217,9 @@ async function main(): Promise<void> {
         }
         case "materials":
           console.log(materialsTable(w));
+          break;
+        case "shelters":
+          console.log(sheltersReport(w));
           break;
         case "pause":
           runner.setSpeed(0);

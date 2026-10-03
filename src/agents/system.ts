@@ -8,6 +8,7 @@ import { act } from "./brain.ts";
 import { RATES, updateBody } from "./needs.ts";
 import { BODY_DAYS } from "./population.ts";
 import { SpatialIndex, learnAround } from "./senses.ts";
+import { shelterAt } from "../building/structures.ts";
 
 const DEATH_WORDS: Record<DeathCause, string> = {
   starvation: "starved",
@@ -32,10 +33,14 @@ export class AgentSystem implements System {
     const agents = population.list();
     this.index.rebuild(agents);
     const ctx = { world, population, index: this.index };
+    const cal = world.calendar;
+    const chilly = cal.season === "cold" && cal.light < RATES.exposureLightThreshold;
 
     for (const agent of agents) {
       const hasCompany = this.index.any(agent.x, agent.y, RATES.companyRadius, agent);
-      const cause = updateBody(agent, world, { hasCompany, sheltered: false });
+      // Shelter only matters to a sleeper or on a cold night, so it is only measured then.
+      const shelter = agent.asleep || chilly ? shelterAt(world, agent.tileX, agent.tileY) : 0;
+      const cause = updateBody(agent, world, { hasCompany, shelter });
       if (cause) {
         this.kill(world, agent, cause);
         continue;

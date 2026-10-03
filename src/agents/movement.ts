@@ -113,6 +113,11 @@ export function followPath(agent: Agent, ctx: AgentContext): boolean {
   while (budget > 0 && agent.hasPath()) {
     const tx = agent.path[agent.pathIndex];
     const ty = agent.path[agent.pathIndex + 1];
+    if (!ctx.world.grid.isWalkable(tx, ty)) {
+      // Something was built across the way since the route was planned.
+      agent.clearPath();
+      break;
+    }
     const dx = tx - agent.x;
     const dy = ty - agent.y;
     const dist = Math.hypot(dx, dy);

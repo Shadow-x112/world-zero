@@ -13,6 +13,7 @@ import { AgentSystem } from "../agents/system.ts";
 import { GridMaintenance } from "../world/maintenance.ts";
 import { MaterialRegistry } from "../materials/registry.ts";
 import { Regrowth } from "../materials/regrowth.ts";
+import { Structures } from "../building/structures.ts";
 
 export interface System {
   readonly name: string;
@@ -72,6 +73,7 @@ export class World {
     this.addSystem(new AgentSystem());
     this.addSystem(new GridMaintenance());
     this.addSystem(new Regrowth());
+    this.addSystem(new Structures());
   }
 
   /** A world rebuilt from saved parts (see persist/store.ts). */

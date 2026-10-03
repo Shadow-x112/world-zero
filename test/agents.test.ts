@@ -14,7 +14,7 @@ import type { Agent } from "../src/agents/agent.ts";
 const HOUR = 3600;
 
 /** Runs only an agent's body for some hours (daytime calendar, no behavior). */
-function bodyHours(agent: Agent, world: World, hours: number, ctx = { hasCompany: false, sheltered: false }) {
+function bodyHours(agent: Agent, world: World, hours: number, ctx = { hasCompany: false, shelter: 0 }) {
   for (let i = 0; i < hours * HOUR; i++) {
     world.tick++;
     const cause = updateBody(agent, world, ctx);
@@ -54,7 +54,7 @@ test("needs drain and recover at the planned rates", () => {
   assert.ok(agent.needs.rest > before + 0.25, "sleep restores rest");
 
   agent.needs.social = 0.5;
-  bodyHours(agent, world, 1, { hasCompany: true, sheltered: false });
+  bodyHours(agent, world, 1, { hasCompany: true, shelter: 0 });
   assert.ok(agent.needs.social > 0.65, "company restores social");
 });
 
@@ -82,7 +82,8 @@ test("cold-season nights in the open cost health; other seasons don't", () => {
     world.calendar = getCalendar(world.tick);
   };
   const runHour = (sheltered: boolean) => {
-    for (let i = 0; i < HOUR; i++) updateBody(agent, world, { hasCompany: true, sheltered });
+    const shelter = sheltered ? 1 : 0;
+    for (let i = 0; i < HOUR; i++) updateBody(agent, world, { hasCompany: true, shelter });
   };
 
   hourAt(2); // growth season
@@ -111,7 +112,7 @@ test("old age: health declines near the end of life and ends it", () => {
   let cause = null;
   for (let i = 0; i < 100 && !cause; i++) {
     world.tick++;
-    cause = updateBody(agent, world, { hasCompany: true, sheltered: true });
+    cause = updateBody(agent, world, { hasCompany: true, shelter: 1 });
   }
   assert.equal(cause, "old age");
 });

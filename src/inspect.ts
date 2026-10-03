@@ -4,6 +4,8 @@ import type { Agent } from "./agents/agent.ts";
 import { TICKS_PER_DAY } from "./core/constants.ts";
 import type { World } from "./core/world.ts";
 import { PROPERTIES, describe } from "./materials/registry.ts";
+import { FULL_HP, allBlocks, blockAt, shelterAt } from "./building/structures.ts";
+import { buildUrge } from "./agents/building.ts";
 
 const ACTION_WORDS: Record<string, string> = {
   sleep: "going to sleep",
@@ -12,6 +14,7 @@ const ACTION_WORDS: Record<string, string> = {
   taste: "tasting something new",
   inspect: "examining something new",
   gather: "gathering food",
+  build: "building",
   explore: "exploring",
   socialize: "seeking company",
   idle: "idling",
@@ -67,6 +70,17 @@ export function agentDetail(agent: Agent, world: World): string {
       lines.push(`    m${id}: ${describe(k.props)} (${how}${verdict}${k.timesEaten ? `, eaten ${k.timesEaten}×` : ""})`);
     }
   }
+  const shelterHere = shelterAt(world, agent.tileX, agent.tileY);
+  if (agent.nest || agent.coldMemory > 0.001 || shelterHere > 0) {
+    const nest = agent.nest
+      ? `sleeps at (${agent.nest.x}, ${agent.nest.y}), shelter there ${pct(shelterAt(world, agent.nest.x, agent.nest.y)).trim()}`
+      : "no sleeping place of its own";
+    lines.push(`  shelter   ${nest}; here ${pct(shelterHere).trim()}`);
+    lines.push(
+      `  building  urge ${pct(buildUrge(agent, world)).trim()} (cold remembered ${agent.coldMemory.toFixed(2)}), ` +
+        `${agent.stats.blocksPlaced} loads placed, leans walls ${agent.buildLeaning.wall.toFixed(2)} / roofs ${agent.buildLeaning.roof.toFixed(2)}`,
+    );
+  }
   const harm = Object.entries(agent.damage).filter(([, v]) => v > 0.001);
   if (harm.length) lines.push(`  harmed by ${harm.map(([k, v]) => `${k} ${pct(v).trim()}`).join(", ")}`);
   return lines.join("\n");
@@ -81,4 +95,43 @@ export function materialsTable(world: World): string {
     return `m${String(t.id).padEnd(3)} ${vals} ${String(t.maxAmount).padStart(5)}  ${describe(t.props)}${ripe}${t.custom ? " [added]" : ""}`;
   });
   return [head, ...rows].join("\n");
+}
+
+/** Everything built, and each AI's sleeping place (creator's view). */
+export function sheltersReport(world: World): string {
+  const blocks = allBlocks(world.grid);
+  if (blocks.length === 0) return "Nothing has been built yet.";
+  const walls = blocks.filter((b) => b.level === "wall").length;
+  const lines = [`${walls} walls and ${blocks.length - walls} roofs standing.`];
+  const what = (material: number) => {
+    const type = world.materials.get(material);
+    return type ? describe(type.props).replace(/^a /, "").replace(/ material$/, "") : "?";
+  };
+  const who = (id: number) => `#${String(id).padStart(2, "0")}`;
+  for (const a of world.population.list()) {
+    const n = a.nest;
+    if (!n) continue;
+    const around: string[] = [];
+    const builders = new Set<string>();
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const b = blockAt(world.grid, "wall", n.x + ox, n.y + oy);
+        if (b) {
+          around.push(what(b.material));
+          builders.add(who(b.by));
+        }
+      }
+    }
+    const roof = blockAt(world.grid, "roof", n.x, n.y);
+    if (roof) builders.add(who(roof.by));
+    const kinds = [...new Set(around)].join("; ");
+    const parts = [
+      around.length ? `${around.length} of 8 sides walled (${kinds})` : "no walls",
+      roof ? `covered by ${what(roof.material)} (${Math.round((roof.hp / FULL_HP) * 100)}%)` : "open overhead",
+    ];
+    const by = builders.size ? `, built by ${[...builders].join(" ")}` : "";
+    lines.push(`  ${a.label} sleeps at (${n.x}, ${n.y}), shelter ${pct(shelterAt(world, n.x, n.y)).trim()}: ${parts.join(", ")}${by}`);
+  }
+  return lines.join("\n");
 }

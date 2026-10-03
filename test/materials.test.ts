@@ -173,8 +173,8 @@ test("huddling halves the harm of a cold night", () => {
   world.tick = 32 * TICKS_PER_DAY + 3600;
   world.calendar = getCalendar(world.tick);
   for (let i = 0; i < 3600; i++) {
-    updateBody(alone, world, { hasCompany: false, sheltered: false });
-    updateBody(huddled, world, { hasCompany: true, sheltered: false });
+    updateBody(alone, world, { hasCompany: false, shelter: 0 });
+    updateBody(huddled, world, { hasCompany: true, shelter: 0 });
   }
   const lostAlone = 1 - alone.health;
   const lostHuddled = 1 - huddled.health;

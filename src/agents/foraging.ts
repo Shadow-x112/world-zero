@@ -20,6 +20,7 @@ import {
 import type { Agent, Carried, MaterialKnowledge } from "./agent.ts";
 import { followPath, planRoute, type ActionDef, type AgentContext } from "./movement.ts";
 import { sightRadius } from "./senses.ts";
+import { shelterAt } from "../building/structures.ts";
 
 /** Most an AI can carry, in units of mass (one unit of a mass-1 material weighs 1). */
 export const CARRY_CAPACITY = 1.2;
@@ -35,6 +36,10 @@ export const FOOD_MEMORY = 24;
 export const SATED = 0.97;
 /** Units of food an AI likes to have on hand when gathering. */
 export const GATHER_TARGET = 6;
+/** Sheltered places an AI can remember at once. */
+export const SHELTER_MEMORY = 8;
+/** A covered place this sheltered is worth remembering. */
+export const SHELTER_WORTH_REMEMBERING = 0.4;
 
 export function knowledgeOf(agent: Agent, id: number): MaterialKnowledge | undefined {
   return agent.knowledge[id];
@@ -90,6 +95,12 @@ function consumeEffect(agent: Agent, type: MaterialType): void {
 }
 
 /** Whether this AI knows the material to be food (and it is in season). */
+/** Whether this AI has learned that a material nourishes (in season or not). */
+export function isKnownFood(agent: Agent, type: MaterialType): boolean {
+  const k = agent.knowledge[type.id];
+  return !!k && k.tasted && (k.props.nourishment ?? 0) >= FOOD_THRESHOLD && harmPerUnit(type) === 0;
+}
+
 export function isFoodTo(agent: Agent, type: MaterialType, season: string): boolean {
   const k = agent.knowledge[type.id];
   return !!k && k.tasted && (k.props.nourishment ?? 0) >= FOOD_THRESHOLD && harmPerUnit(type) === 0 && isRipe(type, season);
@@ -162,6 +173,8 @@ export interface Survey {
   untasted: Spot | null;
   /** Nearest visible material it has never handled. */
   unhandled: Spot | null;
+  /** Nearest visible material it doesn't eat (something to build with). */
+  buildable: Spot | null;
 }
 
 const surveys = new WeakMap<Agent, { tick: number; survey: Survey }>();
@@ -183,7 +196,7 @@ function look(agent: Agent, ctx: AgentContext): Survey {
   const r2 = radius * radius;
   const ax = agent.tileX;
   const ay = agent.tileY;
-  const out: Survey = { food: null, untasted: null, unhandled: null };
+  const out: Survey = { food: null, untasted: null, unhandled: null, buildable: null };
   const seenFood: Spot[] = [];
 
   for (let oy = -radius; oy <= radius; oy++) {
@@ -192,6 +205,9 @@ function look(agent: Agent, ctx: AgentContext): Survey {
       if (d2 > r2) continue;
       const x = ax + ox;
       const y = ay + oy;
+      // Covered places are noticed and remembered as somewhere to shelter.
+      if (grid.peek("roof", x, y) !== 0) noticeShelter(agent, world, x, y);
+      if (grid.peek("wall", x, y) !== 0) continue; // whatever is under a wall can't be reached
       const id = grid.get("material", x, y);
       if (id === 0 || grid.get("amount", x, y) === 0) continue;
       const type = world.materials.get(id);
@@ -205,6 +221,7 @@ function look(agent: Agent, ctx: AgentContext): Survey {
         out.untasted = { x, y, material: id, dist };
       }
       if (!k.handled && (!out.unhandled || dist < out.unhandled.dist)) out.unhandled = { x, y, material: id, dist };
+      if (!isKnownFood(agent, type) && (!out.buildable || dist < out.buildable.dist)) out.buildable = { x, y, material: id, dist };
     }
   }
 
@@ -216,6 +233,25 @@ function look(agent: Agent, ctx: AgentContext): Survey {
   seenFood.sort((a, b) => a.dist - b.dist);
   for (const f of seenFood.slice(0, 6)) remember(agent, world, f.x, f.y, f.material);
   return out;
+}
+
+/** Remembers (or forgets) a covered place depending on how sheltered it is now. */
+function noticeShelter(agent: Agent, world: World, x: number, y: number): void {
+  const spots = agent.shelterSpots;
+  const i = spots.findIndex((s) => s.x === x && s.y === y);
+  const value = world.grid.isWalkable(x, y) ? shelterAt(world, x, y) : 0;
+  if (value < SHELTER_WORTH_REMEMBERING) {
+    if (i >= 0) spots.splice(i, 1);
+    return;
+  }
+  if (i >= 0) spots.splice(i, 1);
+  spots.push({ x, y, value, tick: world.tick });
+  if (spots.length > SHELTER_MEMORY) {
+    // Forget the least sheltered.
+    let worst = 0;
+    for (let j = 1; j < spots.length; j++) if (spots[j].value < spots[worst].value) worst = j;
+    spots.splice(worst, 1);
+  }
 }
 
 function remember(agent: Agent, world: World, x: number, y: number, material: number): void {
@@ -250,7 +286,7 @@ export function hasFoodOption(agent: Agent, ctx: AgentContext): boolean {
 // --- Taking from the ground ---------------------------------------------------
 
 /** Removes one unit from a tile. Returns the material type taken, or null if nothing is there. */
-function takeFromTile(world: World, x: number, y: number, material: number): MaterialType | null {
+export function takeFromTile(world: World, x: number, y: number, material: number): MaterialType | null {
   const grid = world.grid;
   if (grid.get("material", x, y) !== material) return null;
   const amount = grid.get("amount", x, y);
@@ -263,13 +299,13 @@ function takeFromTile(world: World, x: number, y: number, material: number): Mat
   return type;
 }
 
-function atTarget(agent: Agent): boolean {
+export function atTarget(agent: Agent): boolean {
   const a = agent.action!;
   return a.targetX === undefined || (agent.tileX === a.targetX && agent.tileY === a.targetY && !agent.hasPath());
 }
 
 /** Starts walking to a spot. Returns false if it can't be reached at all. */
-function goTo(agent: Agent, ctx: AgentContext, spot: { x: number; y: number }): boolean {
+export function goTo(agent: Agent, ctx: AgentContext, spot: { x: number; y: number }): boolean {
   agent.action!.targetX = spot.x;
   agent.action!.targetY = spot.y;
   if (agent.tileX === spot.x && agent.tileY === spot.y) return true;
@@ -277,7 +313,7 @@ function goTo(agent: Agent, ctx: AgentContext, spot: { x: number; y: number }): 
 }
 
 /** Walks toward the action's target. Returns "arrived", "walking" or "stuck". */
-function approach(agent: Agent, ctx: AgentContext): "arrived" | "walking" | "stuck" {
+export function approach(agent: Agent, ctx: AgentContext): "arrived" | "walking" | "stuck" {
   if (atTarget(agent)) return "arrived";
   if (agent.hasPath()) {
     followPath(agent, ctx);

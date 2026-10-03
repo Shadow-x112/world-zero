@@ -26,7 +26,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 3;
+export const SAVE_FORMAT_VERSION = 4;
 
 interface SavedChunk {
   cx: number;
@@ -86,6 +86,26 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
         foodSpots: [],
         stats: { ...a.stats, meals: 0 },
         damage: { ...a.damage, poisoning: 0 },
+      })),
+    },
+  }),
+  // 3 -> 4: building. Agents gain a memory of cold, a nest and building habits.
+  // (Structure layers need no change: chunks simply don't have them yet.)
+  3: (data) => ({
+    ...data,
+    format: 4,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({
+        ...a,
+        coldMemory: Math.min(1, a.damage?.exposure ?? 0),
+        nest: null,
+        lastSleep: null,
+        buildLeaning: { wall: 1, roof: 1 },
+        placedSinceWake: { wall: 0, roof: 0 },
+        feltShelter: -1,
+        shelterSpots: [],
+        stats: { ...a.stats, blocksPlaced: 0 },
       })),
     },
   }),

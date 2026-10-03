@@ -31,7 +31,23 @@ export const LAYERS: Record<string, LayerKind> = {
   material: "u8",
   /** Units of that material left on the tile. */
   amount: "u16",
+  // Structures (created only in chunks where something has been built).
+  /** Material of the block standing on the tile at ground level (a wall; 0 = none). */
+  wall: "u8",
+  /** Soundness of that block, 0-1000. It fades with time; 0 means it is gone. */
+  wallHp: "u16",
+  /** Who placed it (agent id) and on which world day (+1, so 0 means unknown). */
+  wallBy: "i32",
+  wallDay: "u16",
+  /** Material of the block held up above head height (a roof; 0 = none). */
+  roof: "u8",
+  roofHp: "u16",
+  roofBy: "i32",
+  roofDay: "u16",
 };
+
+/** Layers that only exist in chunks that need them (everything else is created with the chunk). */
+export const LAZY_LAYERS = new Set(["wall", "wallHp", "wallBy", "wallDay", "roof", "roofHp", "roofBy", "roofDay"]);
 
 export const Terrain = {
   open: 0,
@@ -68,12 +84,13 @@ export class Chunk {
   wearTiles = 0;
   private terrainCache: LayerArray | null = null;
   private heightCache: LayerArray | null = null;
+  private wallCache: LayerArray | null = null;
 
   constructor(cx: number, cy: number, generatorVersion: number) {
     this.cx = cx;
     this.cy = cy;
     this.generatorVersion = generatorVersion;
-    for (const [name, kind] of Object.entries(LAYERS)) this.layers.set(name, createLayer(kind));
+    for (const [name, kind] of Object.entries(LAYERS)) if (!LAZY_LAYERS.has(name)) this.layers.set(name, createLayer(kind));
   }
 
   /** Packs chunk coordinates into one number (chunk coordinates stay well within ±1,000,000). */
@@ -97,9 +114,24 @@ export class Chunk {
       array = createLayer(kind);
       this.layers.set(name, array);
     }
+    this.cache(name, array);
+    return array;
+  }
+
+  /** A layer if this chunk has it, without creating it. */
+  peekLayer(name: string): LayerArray | undefined {
+    return this.layers.get(name);
+  }
+
+  /** The wall layer, or null if nothing was ever built here (read on every pathfinding step). */
+  get wallLayer(): LayerArray | null {
+    return this.wallCache;
+  }
+
+  private cache(name: string, array: LayerArray): void {
     if (name === "terrain") this.terrainCache = array;
     else if (name === "height") this.heightCache = array;
-    return array;
+    else if (name === "wall") this.wallCache = array;
   }
 
   get heightLayer(): LayerArray {
@@ -113,8 +145,7 @@ export class Chunk {
   /** Replaces a layer's data (used when loading). */
   setLayer(name: string, array: LayerArray): void {
     this.layers.set(name, array);
-    if (name === "terrain") this.terrainCache = array;
-    else if (name === "height") this.heightCache = array;
+    this.cache(name, array);
   }
 
   /**
