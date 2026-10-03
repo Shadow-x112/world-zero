@@ -6,6 +6,7 @@ import type { World } from "./core/world.ts";
 import { PROPERTIES, describe } from "./materials/registry.ts";
 import { FULL_HP, allBlocks, blockAt, shelterAt } from "./building/structures.ts";
 import { buildUrge } from "./agents/building.ts";
+import { describeItem } from "./items/item.ts";
 
 const ACTION_WORDS: Record<string, string> = {
   sleep: "going to sleep",
@@ -14,6 +15,7 @@ const ACTION_WORDS: Record<string, string> = {
   taste: "tasting something new",
   inspect: "examining something new",
   gather: "gathering food",
+  tinker: "trying things together",
   build: "building",
   explore: "exploring",
   socialize: "seeking company",
@@ -60,6 +62,14 @@ export function agentDetail(agent: Agent, world: World): string {
       return `${c.units} × ${type ? describe(agent.knowledge[c.material]?.props ?? {}) : "?"} (#m${c.material})`;
     });
     lines.push(`  carrying  ${items.join(", ")}`);
+  }
+  if (agent.items.length) {
+    const held = agent.items.map((i) => `${describeItem(i)} (${Math.round(i.wear * 100)}%, used ${i.uses}×)`);
+    lines.push(`  holds     ${held.join("; ")}`);
+  }
+  if (agent.stats.crafted > 0 || Object.keys(agent.tried).length > 0) {
+    const tries = Object.values(agent.tried);
+    lines.push(`  tinkering ${agent.stats.crafted} things made, ${tries.reduce((s, t) => s + t.n, 0)} attempts on ${tries.length} combinations`);
   }
   const known = Object.entries(agent.knowledge);
   if (known.length) {
@@ -134,4 +144,18 @@ export function sheltersReport(world: World): string {
     lines.push(`  ${a.label} sleeps at (${n.x}, ${n.y}), shelter ${pct(shelterAt(world, n.x, n.y)).trim()}: ${parts.join(", ")}${by}`);
   }
   return lines.join("\n");
+}
+
+/** Every made thing in the world, held or lying about (creator's view). */
+export function itemsReport(world: World): string {
+  const lines: string[] = [];
+  for (const agent of world.population.list()) {
+    for (const item of agent.items) {
+      lines.push(`  ${describeItem(item)} - held by ${agent.label}, ${Math.round(item.wear * 100)}%, used ${item.uses}x, made by #${String(item.madeBy).padStart(2, "0")}`);
+    }
+  }
+  for (const g of world.groundItems.all()) {
+    lines.push(`  ${describeItem(g.item)} - lying at (${g.x}, ${g.y}), ${Math.round(g.item.wear * 100)}%, made by #${String(g.item.madeBy).padStart(2, "0")}`);
+  }
+  return lines.length ? [`${lines.length} made things exist.`, ...lines].join("\n") : "Nothing has been made yet.";
 }

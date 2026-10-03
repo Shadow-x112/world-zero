@@ -7,6 +7,8 @@ import { RATES } from "./needs.ts";
 import { findPath } from "./pathfinding.ts";
 import type { Population } from "./population.ts";
 import { learnAround, type SpatialIndex } from "./senses.ts";
+import { carriedMass, carryCapacity } from "./foraging.ts";
+import { itemClass } from "../items/crafting.ts";
 
 export interface AgentContext {
   world: World;
@@ -138,13 +140,30 @@ export function followPath(agent: Agent, ctx: AgentContext): boolean {
 }
 
 function arriveAtTile(agent: Agent, ctx: AgentContext): void {
-  const grid = ctx.world.grid;
+  const world = ctx.world;
+  const grid = world.grid;
   const wear = grid.get("wear", agent.tileX, agent.tileY);
   if (wear < 65535) grid.set("wear", agent.tileX, agent.tileY, wear + 1);
   agent.stats.tilesWalked++;
-  const learned = learnAround(agent, ctx.world);
+  const learned = learnAround(agent, world);
   if (learned > 0) {
     agent.needs.curiosity = Math.min(1, agent.needs.curiosity + learned * RATES.curiosityPerNewBlock);
+  }
+  // Something someone left lying here: pick it up if it isn't ours-just-dropped,
+  // there is room for it, and we don't hold such a thing already.
+  const here = world.groundItems.at(agent.tileX, agent.tileY);
+  if (here.length > 0) {
+    for (const g of [...here]) {
+      if (agent.recentlyDropped.includes(g.item.id)) continue;
+      if (carriedMass(agent, world) + g.item.props.mass > carryCapacity(agent)) continue;
+      const cls = itemClass(g.item);
+      if (cls !== "none" && agent.items.some((i) => itemClass(i) === cls)) continue;
+      const item = world.groundItems.take(g.x, g.y, g.item.id);
+      if (item) {
+        agent.items.push(item);
+        agent.needs.curiosity = Math.min(1, agent.needs.curiosity + 0.05);
+      }
+    }
   }
 }
 

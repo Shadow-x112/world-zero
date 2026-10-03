@@ -14,6 +14,7 @@ import { GridMaintenance } from "../world/maintenance.ts";
 import { MaterialRegistry } from "../materials/registry.ts";
 import { Regrowth } from "../materials/regrowth.ts";
 import { Structures } from "../building/structures.ts";
+import { GroundItems } from "../items/item.ts";
 import { Weather } from "../world/weather.ts";
 
 export interface System {
@@ -43,6 +44,10 @@ export class World {
   readonly materials: MaterialRegistry;
   readonly events = new EventBus();
   tick: number;
+  /** Items lying in the world that no one carries. */
+  groundItems = new GroundItems();
+  /** Next unused item id. */
+  itemSeq = 1;
   /** When the last agent died, or null while anyone lives. */
   extinctTick: number | null = null;
   /** Things that have happened at least once (used to spot firsts for the chronicle). */

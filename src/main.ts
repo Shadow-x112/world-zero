@@ -15,7 +15,7 @@ import { SPEEDS } from "./core/constants.ts";
 import { Runner, isSpeed, type Speed } from "./core/runner.ts";
 import { formatCalendar } from "./core/time.ts";
 import { World } from "./core/world.ts";
-import { agentDetail, agentLine, materialsTable, sheltersReport } from "./inspect.ts";
+import { agentDetail, agentLine, itemsReport, materialsTable, sheltersReport } from "./inspect.ts";
 import { countBlocks } from "./building/structures.ts";
 import { describeWinter, winterSeverity } from "./world/weather.ts";
 import { Store } from "./persist/store.ts";
@@ -30,6 +30,7 @@ const HELP = `Commands:
   ai <id>           everything about one AI (e.g. "ai 7")
   materials         every kind of material and its true properties
   shelters          everything built, and where each AI sleeps
+  items             every made thing, held or lying in the world
   chronicle [n]     the last n important events (default 10)
   pause / resume    stop or restart time
   speed <n>         ${SPEEDS.filter((s) => s > 0).join(", ")}
@@ -222,6 +223,9 @@ async function main(): Promise<void> {
           break;
         case "shelters":
           console.log(sheltersReport(w));
+          break;
+        case "items":
+          console.log(itemsReport(w));
           break;
         case "pause":
           runner.setSpeed(0);

@@ -21,13 +21,16 @@ import type { Agent, Carried, MaterialKnowledge } from "./agent.ts";
 import { followPath, planRoute, type ActionDef, type AgentContext } from "./movement.ts";
 import { sightRadius } from "./senses.ts";
 import { shelterAt } from "../building/structures.ts";
+import { WEAR_PER_USE, breakPower, carryBonus, cutPower, describeItem, type Item } from "../items/item.ts";
 
-/** Most an AI can carry, in units of mass (one unit of a mass-1 material weighs 1). */
+/** What the arms alone can carry, in units of mass (a woven carrier adds to it). */
 export const CARRY_CAPACITY = 1.2;
 /** World seconds to eat one unit. */
 export const BITE_TICKS = 90;
-/** World seconds to pick up one unit. */
+/** World seconds to pick up one unit of the softest material, bare-handed. */
 export const PICKUP_TICKS = 20;
+/** Picking gets slower the harder the material is to work loose (bare-handed). */
+export const PICKUP_HARDNESS_FACTOR = 1.0;
 /** Nourishment below this isn't worth eating. */
 export const FOOD_THRESHOLD = 0.3;
 /** Places with food an AI can remember at once. */
@@ -111,12 +114,100 @@ export function isFoodTo(agent: Agent, type: MaterialType, season: string): bool
 export function carriedMass(agent: Agent, world: World): number {
   let mass = 0;
   for (const c of agent.carrying) mass += c.units * (world.materials.get(c.material)?.props.mass ?? 0);
+  for (const item of agent.items) mass += item.props.mass;
   return mass;
 }
 
+/** What this AI can carry: its arms, plus whatever woven carriers it holds spread. */
+export function carryCapacity(agent: Agent): number {
+  let bonus = 0;
+  for (const item of agent.items) bonus += carryBonus(item);
+  return CARRY_CAPACITY + Math.min(1.2, bonus);
+}
+
 export function roomFor(agent: Agent, world: World, type: MaterialType): number {
-  const free = CARRY_CAPACITY - carriedMass(agent, world);
+  const free = carryCapacity(agent) - carriedMass(agent, world);
   return Math.max(0, Math.floor(free / Math.max(0.01, type.props.mass) + 1e-9));
+}
+
+// --- Tools --------------------------------------------------------------------
+
+/** The carried item that most speeds working this material loose, if any helps. */
+export function bestToolFor(agent: Agent, type: MaterialType): { item: Item; factor: number } | null {
+  let best: { item: Item; factor: number } | null = null;
+  for (const item of agent.items) {
+    // Soft and fibrous things are cut free; hard things are broken loose.
+    const factor = type.props.hardness < 0.5 ? 1 + cutPower(item) : 1 + breakPower(item) * 1.5;
+    if (factor >= 1.15 && (!best || factor > best.factor)) best = { item, factor };
+  }
+  return best;
+}
+
+/** World seconds to work one unit loose, given what the AI holds. */
+export function pickupTicks(agent: Agent, world: World, type: MaterialType): number {
+  const bare = PICKUP_TICKS * (1 + PICKUP_HARDNESS_FACTOR * type.props.hardness);
+  const tool = bestToolFor(agent, type);
+  return Math.max(5, Math.round(bare / (tool ? tool.factor : 1)));
+}
+
+/** After a unit came loose: the tool that helped wears a little, and its help is remembered. */
+export function toolDidWork(agent: Agent, world: World, type: MaterialType): void {
+  const tool = bestToolFor(agent, type);
+  if (!tool) return;
+  tool.item.uses++;
+  tool.item.wear -= WEAR_PER_USE;
+  if (tool.item.uses === 3 && world.isFirst("toolHelped")) {
+    world.chronicle.add(
+      world.tick,
+      "crafting",
+      `${agent.label}'s work keeps going faster with ${describeItem(tool.item)} in hand: the first tool.`,
+      { agentId: agent.id, item: tool.item.id },
+    );
+  }
+  if (tool.item.wear <= 0) agent.items = agent.items.filter((i) => i !== tool.item);
+}
+
+/** Sets down the least proven item to make room (remembering not to re-grab it at once). */
+export function shedLeastUseful(agent: Agent, world: World): boolean {
+  if (agent.items.length === 0) return false;
+  let worst: Item | null = null;
+  for (const item of agent.items) {
+    if (carryBonus(item) > 0) continue; // a carrier is making room, not taking it
+    if (!worst || item.uses < worst.uses) worst = item;
+  }
+  if (!worst || worst.uses > 10) return false;
+  agent.items = agent.items.filter((i) => i !== worst);
+  world.groundItems.drop(agent.tileX, agent.tileY, worst);
+  agent.recentlyDropped.push(worst.id);
+  if (agent.recentlyDropped.length > 4) agent.recentlyDropped.shift();
+  return true;
+}
+
+/** Everything falls where the AI stands (called when it dies). */
+export function dropEverything(agent: Agent, world: World): void {
+  for (const item of agent.items) world.groundItems.drop(agent.tileX, agent.tileY, item);
+  agent.items = [];
+  const grid = world.grid;
+  for (const c of agent.carrying) {
+    // Onto its own tile, or the first neighboring tile that can take it.
+    for (let r = 0; r <= 1; r++) {
+      let placed = false;
+      for (let oy = -r; oy <= r && !placed; oy++) {
+        for (let ox = -r; ox <= r && !placed; ox++) {
+          const x = agent.tileX + ox;
+          const y = agent.tileY + oy;
+          if (grid.peek("wall", x, y) !== 0) continue;
+          const here = grid.get("material", x, y);
+          if (here !== 0 && here !== c.material) continue;
+          grid.set("material", x, y, c.material);
+          grid.set("amount", x, y, Math.min(65535, grid.get("amount", x, y) + c.units));
+          placed = true;
+        }
+      }
+      if (placed) break;
+    }
+  }
+  agent.carrying = [];
 }
 
 export function addCarried(agent: Agent, material: number, units: number): void {
@@ -441,9 +532,9 @@ export const GATHER: ActionDef = {
     const spot = survey(agent, ctx).food;
     if (!spot) return false;
     const type = ctx.world.materials.require(spot.material);
-    if (roomFor(agent, ctx.world, type) === 0) return false;
+    if (roomFor(agent, ctx.world, type) === 0 && !shedLeastUseful(agent, ctx.world)) return false;
     agent.action!.material = spot.material;
-    agent.action!.untilTick = ctx.world.tick + PICKUP_TICKS;
+    agent.action!.untilTick = ctx.world.tick + pickupTicks(agent, ctx.world, type);
     return goTo(agent, ctx, spot);
   },
   step(agent, ctx) {
@@ -451,18 +542,19 @@ export const GATHER: ActionDef = {
     const a = agent.action!;
     const state = approach(agent, ctx);
     if (state === "stuck") return true;
+    const type = world.materials.require(a.material!);
     if (state === "walking") {
-      a.untilTick = world.tick + PICKUP_TICKS;
+      a.untilTick = world.tick + pickupTicks(agent, world, type);
       return false;
     }
     if (world.tick < (a.untilTick ?? 0)) return false;
-    a.untilTick = world.tick + PICKUP_TICKS;
-    const type = world.materials.require(a.material!);
+    a.untilTick = world.tick + pickupTicks(agent, world, type);
     if (roomFor(agent, world, type) === 0 || carriedFoodUnits(agent, world) >= GATHER_TARGET) return true;
     if (!takeFromTile(world, a.targetX!, a.targetY!, a.material!)) {
       forget(agent, a.targetX!, a.targetY!);
       return true;
     }
+    toolDidWork(agent, world, type);
     addCarried(agent, type.id, 1);
     return false;
   },

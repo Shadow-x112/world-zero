@@ -3,6 +3,7 @@
 import type { ActionType, Agent } from "./agent.ts";
 import { EAT, GATHER, INSPECT, SHELTER_WORTH_REMEMBERING, TASTE } from "./foraging.ts";
 import { BUILD, wakeAtNest } from "./building.ts";
+import { TINKER } from "./tinker.ts";
 import { shelterAt } from "../building/structures.ts";
 import {
   MAX_LEG,
@@ -359,6 +360,7 @@ export const ACTIONS: Record<ActionType, ActionDef> = {
   taste: TASTE,
   inspect: INSPECT,
   gather: GATHER,
+  tinker: TINKER,
   build: BUILD,
   explore,
   socialize,

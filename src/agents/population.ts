@@ -27,7 +27,7 @@ export interface Body {
 /** How long a body remains before it is gone, in world days. */
 export const BODY_DAYS = 3;
 
-export const FOUNDER_COUNT = 20;
+export const FOUNDER_COUNT = 50;
 
 export interface PopulationData {
   nextId: number;
@@ -101,6 +101,9 @@ export class Population {
       knowledge: {},
       carrying: [],
       foodSpots: [],
+      items: [],
+      tried: {},
+      recentlyDropped: [],
       coldMemory: 0,
       nest: null,
       lastSleep: null,
@@ -108,7 +111,7 @@ export class Population {
       placedSinceWake: { wall: 0, roof: 0 },
       feltShelter: -1,
       shelterSpots: [],
-      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0 },
+      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0, crafted: 0 },
     };
     const agent = new Agent(data);
     this.add(agent);
@@ -124,7 +127,7 @@ export class Population {
       let y = 0;
       do {
         const angle = rng.range(0, Math.PI * 2);
-        const r = Math.sqrt(rng.next()) * 4;
+        const r = Math.sqrt(rng.next()) * 7;
         x = Math.round(Math.cos(angle) * r) || 0; // `|| 0` turns -0 into 0
         y = Math.round(Math.sin(angle) * r) || 0;
       } while (taken.has(`${x},${y}`));

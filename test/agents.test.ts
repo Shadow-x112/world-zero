@@ -23,14 +23,14 @@ function bodyHours(agent: Agent, world: World, hours: number, ctx = { hasCompany
   return null;
 }
 
-test("20 identical founders start together, grown, healthy and fed", () => {
+test("the founders start together, grown, healthy and fed", () => {
   const world = World.create({ seed: 2 });
   const agents = world.population.list();
   assert.equal(agents.length, FOUNDER_COUNT);
   for (const a of agents) {
     assert.deepEqual(a.needs, { energy: 1, rest: 1, social: 1, curiosity: 0.7 });
     assert.equal(a.health, 1);
-    assert.ok(Math.hypot(a.x, a.y) <= 5, "near the middle of the plain");
+    assert.ok(Math.hypot(a.x, a.y) <= 8, "near the middle of the plain");
     const life = a.lifeFraction(world.tick);
     assert.ok(life > 0.2 && life < 0.3, "grown up but young");
   }

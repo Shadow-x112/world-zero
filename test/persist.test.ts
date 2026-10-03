@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { World } from "../src/core/world.ts";
 import { Store, serializeWorld, deserializeWorld, SAVE_FORMAT_VERSION } from "../src/persist/store.ts";
 import { TICKS_PER_DAY } from "../src/core/constants.ts";
+import { FOUNDER_COUNT } from "../src/agents/population.ts";
 
 async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "world-zero-test-"));
@@ -14,7 +15,7 @@ async function tempDir(): Promise<string> {
 
 test("a new world starts with its founders, a chronicle and the starting plain", () => {
   const world = World.create({ seed: 11 });
-  assert.equal(world.population.count, 20);
+  assert.equal(world.population.count, FOUNDER_COUNT);
   assert.deepEqual(world.chronicle.all().map((e) => e.kind), ["world", "founders"]);
   assert.ok(world.grid.chunkCount > 0);
   assert.equal(world.meta.generation, 1);
@@ -189,6 +190,6 @@ test("a step-1 save (format 1, no agents) upgrades and receives its founders", (
     chunks: [],
   };
   const { world: upgraded } = deserializeWorld(v1);
-  assert.equal(upgraded.population.count, 20);
+  assert.equal(upgraded.population.count, FOUNDER_COUNT);
   assert.equal(upgraded.chronicle.all().at(-1)!.kind, "founders");
 });

@@ -9,6 +9,10 @@ import { RATES, updateBody } from "./needs.ts";
 import { BODY_DAYS } from "./population.ts";
 import { SpatialIndex, learnAround } from "./senses.ts";
 import { shelterAt } from "../building/structures.ts";
+import { dropEverything } from "./foraging.ts";
+
+/** Days after which unseen ground fades from an AI's memory of the world. */
+export const KNOWN_FADE_DAYS = 12;
 
 const DEATH_WORDS: Record<DeathCause, string> = {
   starvation: "starved",
@@ -23,9 +27,22 @@ export class AgentSystem implements System {
   readonly name = "agents";
   readonly index = new SpatialIndex(8);
 
+  private unsubscribe: (() => void) | null = null;
+
   init(world: World): void {
-    // Agents see their surroundings from the first moment.
-    for (const agent of world.population.all()) learnAround(agent, world);
+    // Agents see their surroundings from the first moment. (Only ones who have
+    // never seen anything: on a load this must not touch when-blocks-were-seen.)
+    for (const agent of world.population.all()) if (agent.knownCount === 0) learnAround(agent, world);
+    // Ground not seen in a long while fades back to unknown, so old territory
+    // can feel new again and exploring never fully starves.
+    this.unsubscribe = world.events.on("newDay", () => {
+      const before = world.tick - KNOWN_FADE_DAYS * TICKS_PER_DAY;
+      for (const agent of world.population.all()) agent.fadeKnown(before);
+    });
+  }
+
+  dispose(): void {
+    this.unsubscribe?.();
   }
 
   update(world: World): void {
@@ -62,6 +79,7 @@ export class AgentSystem implements System {
   }
 
   kill(world: World, agent: Agent, cause: DeathCause): void {
+    dropEverything(agent, world); // its belongings fall where it fell
     const population = world.population;
     population.remove(agent.id);
     population.deaths++;

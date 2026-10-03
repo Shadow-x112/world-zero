@@ -21,12 +21,13 @@ import { Population, type PopulationData } from "../agents/population.ts";
 import { MaterialRegistry, type RegistryData } from "../materials/registry.ts";
 import { placeMaterials } from "../materials/placement.ts";
 import { Chunk, kindOf, type LayerArray, type LayerKind } from "../world/chunk.ts";
+import { GroundItems, type GroundItem } from "../items/item.ts";
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 4;
+export const SAVE_FORMAT_VERSION = 5;
 
 interface SavedChunk {
   cx: number;
@@ -56,6 +57,9 @@ export interface SaveData {
   materials: RegistryData;
   /** Things that have happened at least once in this world. */
   firsts: string[];
+  /** Items lying in the world, and the next unused item id. */
+  groundItems: GroundItem[];
+  itemSeq: number;
 }
 
 /** Upgrades older saves step by step. Key = format version being upgraded from. */
@@ -109,6 +113,25 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
       })),
     },
   }),
+  // 4 -> 5: items and tinkering. Agents gain hands-full-of-things and a memory
+  // of combinations tried; known ground gains a last-seen time so it can fade.
+  4: (data) => ({
+    ...data,
+    format: 5,
+    groundItems: [],
+    itemSeq: 1,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({
+        ...a,
+        items: [],
+        tried: {},
+        recentlyDropped: [],
+        known: (a.known as number[]).flatMap((key) => [key, data.tick]),
+        stats: { ...a.stats, crafted: 0 },
+      })),
+    },
+  }),
 };
 
 function encodeLayer(array: LayerArray): string {
@@ -152,6 +175,8 @@ export function serializeWorld(world: World, speed: number): SaveData {
     pristine,
     materials: world.materials.toJSON(),
     firsts: [...world.firsts],
+    groundItems: world.groundItems.toJSON(),
+    itemSeq: world.itemSeq,
   };
 }
 
@@ -173,6 +198,8 @@ export function deserializeWorld(raw: any): { world: World; speed: number } {
   const materials = MaterialRegistry.fromJSON(save.materials);
   const world = World.restore(save.meta, save.tick, rng, chronicle, population, materials, save.extinctTick, (w) => {
     for (const key of save.firsts) w.firsts.add(key);
+    w.itemSeq = save.itemSeq;
+    for (const g of GroundItems.fromJSON(save.groundItems).all()) w.groundItems.drop(g.x, g.y, g.item);
     for (const saved of save.chunks) {
       const chunk = new Chunk(saved.cx, saved.cy, saved.gen);
       for (const [name, layer] of Object.entries(saved.layers)) chunk.setLayer(name, decodeLayer(layer.kind, layer.data));

@@ -26,15 +26,16 @@ import {
 } from "../building/structures.ts";
 import type { Agent, Nest } from "./agent.ts";
 import {
-  PICKUP_TICKS,
   addCarried,
   approach,
   goTo,
   handle,
   isKnownFood,
   roomFor,
+  pickupTicks,
   survey,
   takeFromTile,
+  toolDidWork,
 } from "./foraging.ts";
 import type { ActionDef, AgentContext } from "./movement.ts";
 
@@ -282,7 +283,7 @@ export const BUILD: ActionDef = {
     if (placements(agent, ctx, nest, type).length === 0) return false;
     a.phase = "fetch";
     a.material = source.material;
-    a.untilTick = world.tick + PICKUP_TICKS;
+    a.untilTick = world.tick + pickupTicks(agent, world, type);
     return goTo(agent, ctx, source);
   },
   step(agent, ctx) {
@@ -294,17 +295,18 @@ export const BUILD: ActionDef = {
     if (a.phase === "fetch") {
       const state = approach(agent, ctx);
       if (state === "stuck") return true;
+      const type = world.materials.require(a.material!);
       if (state === "walking") {
-        a.untilTick = world.tick + PICKUP_TICKS;
+        a.untilTick = world.tick + pickupTicks(agent, world, type);
         return false;
       }
       if (world.tick < (a.untilTick ?? 0)) return false;
-      a.untilTick = world.tick + PICKUP_TICKS;
-      const type = world.materials.require(a.material!);
+      a.untilTick = world.tick + pickupTicks(agent, world, type);
       if (unitsCarried(agent, type.id) < unitsPerBlock(type) && roomFor(agent, world, type) > 0) {
         const taken = takeFromTile(world, a.targetX!, a.targetY!, type.id);
         if (taken) {
           handle(agent, world, taken);
+          toolDidWork(agent, world, taken);
           addCarried(agent, taken.id, 1);
           if (unitsCarried(agent, type.id) < unitsPerBlock(type) && roomFor(agent, world, type) > 0) return false;
         }

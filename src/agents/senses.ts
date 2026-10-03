@@ -102,7 +102,7 @@ export function learnAround(agent: Agent, world: World): number {
       const cx = bx * KNOWN_BLOCK_SIZE + half;
       const cy = by * KNOWN_BLOCK_SIZE + half;
       if (Math.hypot(cx - agent.x, cy - agent.y) > radius) continue;
-      if (agent.learnBlock(bx, by)) learned++;
+      if (agent.learnBlock(bx, by, world.tick)) learned++;
     }
   }
   return learned;

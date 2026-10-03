@@ -1,6 +1,6 @@
 # world-zero
 
-A persistent 3D world where 20 identical AIs start on an empty grid and build a city on their own.
+A persistent 3D world where 50 identical AIs start on an empty grid and build a city on their own.
 
 Nothing is scripted: needs, emotions, personalities, specializations, crafting, language, relationships, and the city itself all emerge from their behavior. The project has no real name yet; it will take whatever name the AIs give their world.
 
@@ -26,6 +26,7 @@ While it runs, type a command and press Enter:
 | `ai <id>` | Everything about one AI, e.g. `ai 7`: needs, what it carries, what it has learned |
 | `materials` | Every kind of material and its true properties |
 | `shelters` | Everything built, and where each AI sleeps |
+| `items` | Every made thing, held or lying in the world |
 | `pause` / `resume` | Stop or restart time |
 | `speed <n>` | 1, 2, 5, 10, 25, 50 or 100 |
 | `save` | Save now (it also autosaves every minute) |
@@ -45,6 +46,10 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
 4. Crafting and building
    - 4a. **Placing material and shelter** ✅ (walls, roofs, the nesting instinct, sleeping where it's warmest)
    - 4b. Combining, tools, fire and usefulness
+     - **Items, tinkering, bind + shape, tools that matter** ✅
+     - Mix: paste and bricks
+     - Fire: dangerous from day one
+     - Cooking and medicine
 5. Learning: specialization, personality, teaching, emergent language
 6. Server deployment (24/7)
 7. 3D viewer, speed controls, AI inspector, chronicle
@@ -57,6 +62,7 @@ src/core/      time, calendar, randomness, world, runner, chronicle, events
 src/agents/    the AIs: bodies and needs, decisions, actions, foraging, building, pathfinding, population
 src/materials/ material properties, placement in the world, regrowth
 src/building/  structures: walls, roofs, shelter, weathering
+src/items/     made things: the hidden crafting rules, wear, items on the ground
 src/world/     endless chunked grid, world generation, grid upkeep
 src/persist/   saving, loading, backups
 src/inspect.ts text descriptions of AIs

@@ -5,6 +5,7 @@
 // and actions.ts (doing it).
 
 import { TICKS_PER_DAY } from "../core/constants.ts";
+import type { Item } from "../items/item.ts";
 
 export interface Needs {
   /** 1 = well fed, 0 = starving. Restored by eating. */
@@ -29,6 +30,7 @@ export type ActionType =
   | "taste"
   | "inspect"
   | "gather"
+  | "tinker"
   | "build"
   | "explore"
   | "socialize"
@@ -124,7 +126,8 @@ export interface AgentData {
   /** Remaining route as flat [x0, y0, x1, y1, ...] tile coordinates. */
   path: number[];
   pathIndex: number;
-  /** Coarse blocks of the world this agent has seen (see knownBlockKey). */
+  /** Coarse blocks of the world this agent has seen, as [key, lastSeenTick] pairs flattened.
+   * Ground not seen again for a long while fades back to unknown (see KNOWN_FADE_DAYS). */
   known: number[];
   /** Where another agent was last seen, used to find company again. */
   lastSeenOther: { x: number; y: number; tick: number } | null;
@@ -135,6 +138,12 @@ export interface AgentData {
   carrying: Carried[];
   /** Places food was seen recently (most recent last). */
   foodSpots: FoodSpot[];
+  /** Things it has made or picked up. Their mass counts against what it can carry. */
+  items: Item[];
+  /** What it has tried to make: combination key -> attempts and successes. Dies with it. */
+  tried: Record<string, { n: number; ok: number }>;
+  /** Items it set down on purpose lately (so it doesn't pick them right back up). */
+  recentlyDropped: number[];
   /** Harm remembered from cold nights; fades in warm seasons. Drives the urge to build. */
   coldMemory: number;
   /** Where it sleeps and builds, once it has started building. */
@@ -147,7 +156,7 @@ export interface AgentData {
   /** Shelter felt at the nest on the last waking there (-1 = never). */
   feltShelter: number;
   shelterSpots: ShelterSpot[];
-  stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number };
+  stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number };
 }
 
 export const KNOWN_BLOCK_SIZE = 8;
@@ -192,6 +201,9 @@ export class Agent implements AgentData {
   knowledge!: Record<string, MaterialKnowledge>;
   carrying!: Carried[];
   foodSpots!: FoodSpot[];
+  items!: Item[];
+  tried!: Record<string, { n: number; ok: number }>;
+  recentlyDropped!: number[];
   coldMemory!: number;
   nest!: Nest | null;
   lastSleep!: { x: number; y: number } | null;
@@ -199,14 +211,14 @@ export class Agent implements AgentData {
   placedSinceWake!: BuildLeaning;
   feltShelter!: number;
   shelterSpots!: ShelterSpot[];
-  stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number };
+  stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number };
 
-  /** Fast lookup for `known`; rebuilt from the array on load. */
-  private knownSet = new Set<number>();
+  /** Fast lookup for `known` (key -> last seen tick); rebuilt from the array on load. */
+  private knownMap = new Map<number, number>();
 
   constructor(data: AgentData) {
     Object.assign(this, structuredClone(data));
-    for (const key of this.known) this.knownSet.add(key);
+    for (let i = 0; i + 1 < this.known.length; i += 2) this.knownMap.set(this.known[i], this.known[i + 1]);
   }
 
   get label(): string {
@@ -235,20 +247,31 @@ export class Agent implements AgentData {
   }
 
   knows(bx: number, by: number): boolean {
-    return this.knownSet.has(knownBlockKey(bx, by));
+    return this.knownMap.has(knownBlockKey(bx, by));
   }
 
-  /** Records a block as seen. Returns true if it was new. */
-  learnBlock(bx: number, by: number): boolean {
+  /** Records a block as seen now. Returns true if it was new (or had faded from memory). */
+  learnBlock(bx: number, by: number, tick: number): boolean {
     const key = knownBlockKey(bx, by);
-    if (this.knownSet.has(key)) return false;
-    this.knownSet.add(key);
-    this.known.push(key);
-    return true;
+    const isNew = !this.knownMap.has(key);
+    this.knownMap.set(key, tick);
+    return isNew;
+  }
+
+  /** Forgets blocks not seen since `before`. Returns how many faded. */
+  fadeKnown(before: number): number {
+    let faded = 0;
+    for (const [key, seen] of this.knownMap) {
+      if (seen < before) {
+        this.knownMap.delete(key);
+        faded++;
+      }
+    }
+    return faded;
   }
 
   get knownCount(): number {
-    return this.knownSet.size;
+    return this.knownMap.size;
   }
 
   clearPath(): void {
@@ -261,7 +284,9 @@ export class Agent implements AgentData {
   }
 
   toJSON(): AgentData {
-    const { knownSet: _ignored, ...data } = this as unknown as AgentData & { knownSet: unknown };
-    return data;
+    const { knownMap: _ignored, ...data } = this as unknown as AgentData & { knownMap: unknown };
+    const known: number[] = [];
+    for (const [key, tick] of this.knownMap) known.push(key, tick);
+    return { ...data, known };
   }
 }

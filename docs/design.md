@@ -141,3 +141,13 @@ How the plan above was turned into numbers. All of these are tunable.
 - Nights are harsher than in the first cut: an ordinary cold-season night in the open costs about 60% of an AI's health alone and unsheltered (shelter still cuts it in proportion, huddling halves what's left).
 - Bodies burn energy half again as fast in the cold season, so food gathered in autumn matters.
 - Every winter has its own severity, fixed from the world's seed and the year (0.8x for the mildest to 1.4x for the harshest). Most are ordinary, many are mild, about one in eleven is bitter; a bitter night in the open costs more health than a full day can restore even while huddled. The chronicle notes a mild, hard or bitter winter as it sets in, and `status` names the kind of winter while it lasts.
+
+## Implementation notes (step 4b part 1: items and tinkering)
+
+- An item is a single made thing: a bundle of parts and the properties that follow from them, plus wear (about 250 uses, then it breaks). No item has a name or a declared purpose.
+- Hidden rules, never shown to the AIs: BIND (flexible stuff ties parts into one thing; the hard part does the work, a long sturdy part adds reach), BUNDLE (enough fibers woven into themselves make a carrier that raises what can be hauled, by up to double), SHAPE (striking a hard thing with something hard and heavy knocks mass off and can raise an edge; chancy, and failures eat the piece). MIX and HEAT arrive with parts 2 and 3.
+- Usefulness is discovered, not stated: working a material loose takes longer the harder it is, a sharp edge speeds cutting soft and fibrous things, something hard AND heavy speeds breaking hard things, and a carrier raises capacity. The tool that helps wears a little with each use, and its help is counted on it.
+- The tinker action drives discovery: a restless AI tries what it carries against each other (fetching a missing part first if something nearby would do). Most attempts fail and waste material. Each AI remembers what it has tried; new combinations beckon, failures tire, and making a second of something it already holds bores it - but it will gladly re-make a broken tool it misses. That memory dies with its holder.
+- Tinkering is the second outlet for curiosity (with exploring), so settled groups turn inventive; and ground not seen for about 12 days fades back to unknown, so exploring never fully starves either.
+- Belongings fall where an AI dies. Anyone walking over a dropped item picks it up if there is room and it holds nothing of the kind, so a dead maker's tool can outlive them in a stranger's hands.
+- The founders now number 50 (was 20).

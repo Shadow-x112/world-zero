@@ -8,6 +8,7 @@ import { ACTIONS, type AgentContext } from "./actions.ts";
 import { GATHER_TARGET, carriedFoodUnits, hasFoodOption, survey } from "./foraging.ts";
 import { mustCollapse } from "./needs.ts";
 import { buildUrge } from "./building.ts";
+import { bestAttempt } from "./tinker.ts";
 import { sightRadius } from "./senses.ts";
 
 /** How often an awake agent reconsiders, in ticks (world seconds). */
@@ -19,7 +20,8 @@ export const NOISE = 0.04;
 /** How strongly a full urge to build competes with other needs. */
 export const BUILD_WEIGHT = 0.6;
 
-const ORDER: ActionType[] = ["sleep", "eat", "seekFood", "taste", "inspect", "gather", "build", "explore", "socialize", "idle"];
+
+const ORDER: ActionType[] = ["sleep", "eat", "seekFood", "taste", "inspect", "gather", "tinker", "build", "explore", "socialize", "idle"];
 
 export type Scores = Record<ActionType, number>;
 
@@ -55,6 +57,17 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
     gather = 0.1 + (season === "decline" || season === "cold" ? 0.15 : 0);
   }
 
+  // Restlessness with something in hand turns inward: trying things against
+  // each other. A promising untried combination beats wandering; without one,
+  // tinkering is only an occasional whim (which can mean fetching parts).
+  let tinker = 0;
+  if (light >= 0.35 && n.energy > 0.3) {
+    const promising = agent.carrying.length + agent.items.length > 0 ? bestAttempt(agent, ctx) : null;
+    tinker = restless * (promising ? 0.45 + 0.4 * promising.interest : 0.3);
+    // A mind full of the cold has no room for play: survival outranks hobbies.
+    tinker *= 1 - 0.6 * buildUrge(agent, world);
+  }
+
   // Remembered cold draws it to build around its sleeping place, above all late in the day.
   let build = 0;
   const urge = buildUrge(agent, world);
@@ -70,7 +83,7 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
     agent.lastSeenOther !== null || ctx.index.any(agent.x, agent.y, sightRadius(light), agent);
   const socialize = knowsSomeone ? Math.pow(1 - n.social, 1.2) * 0.75 : 0;
 
-  return { sleep, eat, seekFood, taste, inspect, gather, build, explore, socialize, idle: 0.08 };
+  return { sleep, eat, seekFood, taste, inspect, gather, tinker, build, explore, socialize, idle: 0.08 };
 }
 
 /** Updates what the agent remembers about others' whereabouts. */
@@ -113,6 +126,7 @@ export function decide(agent: Agent, ctx: AgentContext): void {
   for (const { type } of ranked) {
     if (type === current) return; // keep doing what it was doing
     if (type === "build" && scores.build <= 0) continue; // only an urge to build leads to building
+    if (type === "tinker" && scores.tinker <= 0) continue;
     if (startAction(agent, ctx, type)) return;
   }
   startAction(agent, ctx, "idle");
