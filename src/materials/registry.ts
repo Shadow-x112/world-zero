@@ -69,10 +69,15 @@ export const BASE_MATERIALS: readonly MaterialType[] = [
   // 10. Dried earth (brick). Never occurs naturally: only mixing the wet earth
   // with fibers and letting the paste dry produces it (see items/crafting.ts).
   { id: 10, maxAmount: 30, props: { hardness: 0.72, sharpness: 0.05, flexibility: 0, mass: 0.6, energy: 0, nourishment: 0, growth: 0, reactivity: 0.05 } },
+  // 11. A small bitter herb. Unremarkable to look at, mildly harmful to a well
+  // body - and in a poisoned one its liveliness binds the toxin instead.
+  { id: 11, maxAmount: 4, ripeIn: ["growth", "peak", "decline"], props: { hardness: 0.05, sharpness: 0, flexibility: 0.3, mass: 0.05, energy: 0.1, nourishment: 0.1, growth: 0.5, reactivity: 0.6 } },
 ];
 
 /** The id mixing produces. Part of the frozen base set. */
 export const BRICK_ID = 10;
+/** The bitter herb's id. Part of the frozen base set. */
+export const HERB_ID = 11;
 
 export function regrows(type: MaterialType): boolean {
   return type.props.growth > 0.1;
@@ -82,10 +87,21 @@ export function isRipe(type: MaterialType, season: string): boolean {
   return !type.ripeIn || (type.ripeIn as string[]).includes(season);
 }
 
-/** Health harm from eating one unit (reactive things hurt). */
+/** Toxin taken in by eating one unit (reactive things poison; the harm comes on over hours). */
 export function harmPerUnit(type: MaterialType): number {
   const r = type.props.reactivity;
-  return r > 0.3 ? (r - 0.3) * 0.08 : 0;
+  return r > 0.3 ? (r - 0.3) * 0.25 : 0;
+}
+
+/**
+ * Toxin one unit binds when eaten by an already-poisoned body. Only lively but
+ * energy-dead matter absorbs (clay, the bitter herb); an energetic poison like
+ * the glowing material only ever adds to the sickness.
+ */
+export function absorbPerUnit(type: MaterialType): number {
+  const r = type.props.reactivity;
+  if (r < 0.3 || type.props.energy > 0.2) return 0;
+  return r * 0.15;
 }
 
 /** Plain-language description built from properties, e.g. "a soft, nourishing, growing material". */

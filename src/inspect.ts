@@ -11,12 +11,14 @@ import { describeItem } from "./items/item.ts";
 const ACTION_WORDS: Record<string, string> = {
   sleep: "going to sleep",
   eat: "eating",
+  treat: "treating its sickness",
   seekFood: "looking for food",
   taste: "tasting something new",
   inspect: "examining something new",
   gather: "gathering food",
   tinker: "trying things together",
   build: "building",
+  flee: "fleeing the fire",
   explore: "exploring",
   socialize: "seeking company",
   idle: "idling",
@@ -90,6 +92,15 @@ export function agentDetail(agent: Agent, world: World): string {
       `  building  urge ${pct(buildUrge(agent, world)).trim()} (cold remembered ${agent.coldMemory.toFixed(2)}), ` +
         `${agent.stats.blocksPlaced} loads placed, leans walls ${agent.buildLeaning.wall.toFixed(2)} / roofs ${agent.buildLeaning.roof.toFixed(2)}`,
     );
+  }
+  if (agent.toxin >= 0.01) lines.push(`  sick      poison in the body: ${agent.toxin.toFixed(2)} (drains health until it has worked through)`);
+  const liked = Object.entries(agent.tastes)
+    .filter(([, v]) => v >= 0.15)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2);
+  if (liked.length) {
+    const names = liked.map(([id, v]) => `${describe(world.materials.get(Number(id))?.props ?? {})} (${(v as number).toFixed(2)})`);
+    lines.push(`  fond of   ${names.join(", ")}`);
   }
   const harm = Object.entries(agent.damage).filter(([, v]) => v > 0.001);
   if (harm.length) lines.push(`  harmed by ${harm.map(([k, v]) => `${k} ${pct(v).trim()}`).join(", ")}`);

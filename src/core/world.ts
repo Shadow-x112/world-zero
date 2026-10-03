@@ -16,6 +16,7 @@ import { Regrowth } from "../materials/regrowth.ts";
 import { Structures } from "../building/structures.ts";
 import { GroundItems } from "../items/item.ts";
 import { Drying } from "../items/drying.ts";
+import { FireSystem } from "../world/fire.ts";
 import { Weather } from "../world/weather.ts";
 
 export interface System {
@@ -47,6 +48,8 @@ export class World {
   tick: number;
   /** Items lying in the world that no one carries. */
   groundItems = new GroundItems();
+  /** Burning tiles right now (an index over the grid's fire layer). */
+  readonly fireTiles = new Map<number, { x: number; y: number }>();
   /** Next unused item id. */
   itemSeq = 1;
   /** When the last agent died, or null while anyone lives. */
@@ -83,6 +86,7 @@ export class World {
     this.addSystem(new Structures());
     this.addSystem(new Weather());
     this.addSystem(new Drying());
+    this.addSystem(new FireSystem());
   }
 
   /** A world rebuilt from saved parts (see persist/store.ts). */

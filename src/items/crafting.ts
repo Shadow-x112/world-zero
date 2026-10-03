@@ -10,13 +10,15 @@
 // - MIX: shapeable reactive earth worked together with fibers makes a wet
 //   paste. Left for some hours it dries into hard brick, a building material
 //   that exists nowhere in nature.
-// (HEAT arrives with part 3 of this step.)
+// - HEAT: striking hard things together over dry tinder can raise a flame.
+//   Rarely. What it starts takes care of itself (see world/fire.ts).
 
 import type { Rng } from "../core/rng.ts";
 import type { World } from "../core/world.ts";
 import { BRICK_ID, type MaterialType } from "../materials/registry.ts";
 import type { Agent } from "../agents/agent.ts";
 import { breakPower, carryBonus, cutPower, emptyProps, nextItemId, type Item } from "./item.ts";
+import { burnable, fuelOf, igniteAt } from "../world/fire.ts";
 
 /** Flexibility at or above this can bind. */
 export const BINDER_FLEXIBILITY = 0.6;
@@ -48,10 +50,13 @@ export const MIX_EARTH_UNITS = 2;
 export const MIX_YIELD_BRICKS = 2;
 /** World seconds a wet batch takes to dry on its own (fire will hurry it, later). */
 export const DRY_TICKS = 6 * 3600;
+/** Chance that one bout of striking sparks catches the tinder - and once the knack is known. */
+export const HEAT_CHANCE = 0.12;
+export const HEAT_KNACK_CHANCE = 0.4;
 /** World seconds one attempt takes. */
 export const TINKER_TICKS = 1500;
 
-export type Verb = "bind" | "bundle" | "shape" | "mix";
+export type Verb = "bind" | "bundle" | "shape" | "mix" | "heat";
 
 export interface Attempt {
   /** Stable key for the agent's memory of what it has tried. */
@@ -61,8 +66,8 @@ export interface Attempt {
   consumes: Record<string, number>;
   /** An existing carried item used as the head or target (consumed into the result or at risk). */
   usesItem?: Item;
-  /** Carries out the attempt. Returns the new/changed item, or null on failure. */
-  resolve(world: World, agent: Agent, rng: Rng): Item | null;
+  /** Carries out the attempt: the new/changed item, true for a success that makes no item, null on failure. */
+  resolve(world: World, agent: Agent, rng: Rng): Item | true | null;
 }
 
 function unitsOf(agent: Agent, material: number): number {
@@ -211,6 +216,59 @@ export function possibleAttempts(agent: Agent, world: World): Attempt[] {
     }
   }
 
+  // Strike sparks over tinder: two hard things against each other (at least
+  // one with real striking weight; a carried stone tool serves as well as raw
+  // stone), and something dry that burns.
+  let hardPieces = 0;
+  let strikerPieces = 0;
+  for (const c of agent.carrying) {
+    const type = materials.get(c.material);
+    if (!type) continue;
+    if (type.props.hardness >= SHAPEABLE_HARDNESS) hardPieces += c.units;
+    if (type.props.hardness >= STRIKER_HARDNESS && type.props.mass >= STRIKER_MASS) strikerPieces += c.units;
+  }
+  for (const item of agent.items) {
+    if (item.props.hardness >= SHAPEABLE_HARDNESS) hardPieces++;
+    if (item.props.hardness >= STRIKER_HARDNESS && item.props.mass >= STRIKER_MASS) strikerPieces++;
+  }
+  if (strikerPieces >= 1 && hardPieces >= 2) {
+    for (const t of agent.carrying) {
+      const type = materials.get(t.material);
+      if (!type || !burnable(type)) continue;
+      const tinderUnits = Math.min(t.units, Math.max(1, Math.ceil(0.2 / Math.max(0.01, type.props.mass))));
+      if (type.props.mass * tinderUnits < 0.1) continue;
+      out.push({
+        key: `heat:${t.material}`,
+        verb: "heat",
+        consumes: {},
+        resolve: (world, agent, rng) => {
+          // Once you have raised flame, you know the knack of it.
+          const knack = Object.entries(agent.tried).some(([k, v]) => k.startsWith("heat:") && v.ok > 0);
+          if (!rng.chance(knack ? HEAT_KNACK_CHANCE : HEAT_CHANCE)) return null;
+          // Flame needs somewhere to live: the nearest open tile beside it.
+          let spot: [number, number] | null = null;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as [number, number][]) {
+            const x = agent.tileX + dx;
+            const y = agent.tileY + dy;
+            if (world.grid.isWalkable(x, y)) {
+              spot = [x, y];
+              break;
+            }
+          }
+          if (!spot) return null;
+          if (!removeUnits(agent, t.material, tinderUnits)) return null;
+          igniteAt(world, spot[0], spot[1], Math.max(3, fuelOf(type, tinderUnits)));
+          if (world.isFirst("fire")) {
+            world.chronicle.add(world.tick, "fire", `${agent.label} struck sparks into dry tinder until flame rose: fire.`, {
+              agentId: agent.id, x: spot[0], y: spot[1],
+            });
+          }
+          return true;
+        },
+      });
+    }
+  }
+
   // Strike one hard thing with another (either way around).
   for (const striker of strikers) {
     for (const target of shapeables) {
@@ -279,22 +337,22 @@ export function interestIn(agent: Agent, attempt: Attempt, probe: Item | null): 
 
 /** A dry run of what the attempt would make, for judging interest (not applied). */
 export function probeResult(attempt: Attempt, world: World, agent: Agent): Item | null {
-  if (attempt.verb === "shape") return null; // outcome uncertain by nature
+  if (attempt.verb === "shape" || attempt.verb === "heat") return null; // outcome uncertain by nature
   const saved = world.itemSeq;
   const probe = attempt.resolve(world, agent, { chance: () => true, next: () => 0.5 } as unknown as Rng);
   world.itemSeq = saved;
-  return probe;
+  return probe === true ? null : probe;
 }
 
 /** Spends the attempt: consumes parts, rolls the outcome, records the memory. */
-export function performAttempt(attempt: Attempt, world: World, agent: Agent): Item | null {
+export function performAttempt(attempt: Attempt, world: World, agent: Agent): Item | true | null {
   if (!consume(agent, attempt.consumes)) return null;
   const memory = (agent.tried[attempt.key] ??= { n: 0, ok: 0 });
   memory.n++;
   const result = attempt.resolve(world, agent, world.rng);
   if (result) {
     memory.ok++;
-    if (!agent.items.includes(result)) agent.items.push(result);
+    if (result !== true && !agent.items.includes(result)) agent.items.push(result);
     agent.stats.crafted++;
   }
   return result;

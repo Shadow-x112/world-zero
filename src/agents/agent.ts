@@ -18,7 +18,7 @@ export interface Needs {
   curiosity: number;
 }
 
-export type DeathCause = "starvation" | "exhaustion" | "exposure" | "old age" | "injury" | "poisoning";
+export type DeathCause = "starvation" | "exhaustion" | "exposure" | "old age" | "injury" | "poisoning" | "burns";
 
 /** Health lost recently to each cause; used to say why an agent died. Decays over time. */
 export type DamageLog = Record<DeathCause, number>;
@@ -32,6 +32,8 @@ export type ActionType =
   | "gather"
   | "tinker"
   | "build"
+  | "flee"
+  | "treat"
   | "explore"
   | "socialize"
   | "idle";
@@ -46,6 +48,8 @@ export interface MaterialKnowledge {
   /** Property values learned so far (only those its senses have revealed). */
   props: Partial<Record<string, number>>;
   timesEaten: number;
+  /** Learned the hard way: eating this while sick with poison loosens the sickness. */
+  curative?: boolean;
 }
 
 /** Something being carried. */
@@ -144,6 +148,12 @@ export interface AgentData {
   tried: Record<string, { n: number; ok: number }>;
   /** Items it set down on purpose lately (so it doesn't pick them right back up). */
   recentlyDropped: number[];
+  /** Poison taken in and not yet worked through; it drains health over hours. */
+  toxin: number;
+  /** What poisoned it last (a material id; 0 = nothing). More of the same never cures. */
+  toxinFrom: number;
+  /** How much it has come to like each material as food (-1..1), shaped by what its life fed it. */
+  tastes: Record<string, number>;
   /** Harm remembered from cold nights; fades in warm seasons. Drives the urge to build. */
   coldMemory: number;
   /** Where it sleeps and builds, once it has started building. */
@@ -156,7 +166,7 @@ export interface AgentData {
   /** Shelter felt at the nest on the last waking there (-1 = never). */
   feltShelter: number;
   shelterSpots: ShelterSpot[];
-  stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number };
+  stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number };
 }
 
 export const KNOWN_BLOCK_SIZE = 8;
@@ -204,6 +214,9 @@ export class Agent implements AgentData {
   items!: Item[];
   tried!: Record<string, { n: number; ok: number }>;
   recentlyDropped!: number[];
+  toxin!: number;
+  toxinFrom!: number;
+  tastes!: Record<string, number>;
   coldMemory!: number;
   nest!: Nest | null;
   lastSleep!: { x: number; y: number } | null;
@@ -211,7 +224,7 @@ export class Agent implements AgentData {
   placedSinceWake!: BuildLeaning;
   feltShelter!: number;
   shelterSpots!: ShelterSpot[];
-  stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number };
+  stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number };
 
   /** Fast lookup for `known` (key -> last seen tick); rebuilt from the array on load. */
   private knownMap = new Map<number, number>();

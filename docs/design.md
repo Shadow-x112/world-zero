@@ -158,3 +158,19 @@ How the plan above was turned into numbers. All of these are tunable.
 - Bricks build walls that keep out all the cold a wall can (quality 1.0), stand for about 200 days (between grove poles and stone), and cannot span as roofs: too rigid. Brick walls do not burn, which will matter once fire exists.
 - A batch is heavy: two units of earth make two bricks, a full armload without a woven carrier. Earth lives by the water, so brick-making pulls people toward the water's edge and carriers become worth their weight.
 - Nothing points at any of this: an AI discovers mixing by being restless near the water with fibers in hand, and bricks only spread because walls of them outlast everything their makers can otherwise afford.
+
+## Implementation notes (step 4b part 3: fire)
+
+- The HEAT rule: striking hard things together over dry tinder (anything organic with stored energy: fibers, grove wood) can raise a flame - about a 1-in-8 chance per bout of trying, so fire is found, not given. The flame takes the tinder as its first fuel.
+- A fire lives on a tile and eats fuel by the hour (a unit of grove wood burns about 3 hours; a cold-season night costs an armload). Anyone standing within two tiles of a burning-low fire tosses on burnable stuff they carry, generously toward nightfall.
+- Warmth: within 3 tiles, up to three quarters of the night chill never reaches the body, and a warm body can heal. Light: within 5 tiles the night is bright enough to work, so evenings happen around fires. Nearby wet earth bakes hard into brick, and drying paste hurries along.
+- Danger, from day one: fire spreads to anything burnable beside it - the growth on the ground (fiercest in the dry decline season), fiber and wood walls, and the roof above it, which falls in flames and feeds it. Brick and stone do not burn, and a wall that cannot burn shields what stands behind it. Standing in flames kills in under an hour; the one built-in reflex is to run, even out of sleep. Burned groves are gone for good; burned grass keeps its roots.
+- Fear of fire is NOT built in: respect for it must wait for emotions (step 5), so early fires will cost huts and lives. That is intended.
+
+## Implementation notes (step 4b part 4: cooking and medicine)
+
+- Poison lingers: a bad mouthful is mostly hours of sickness (toxin draining health at about 0.03 an hour) rather than an instant blow, and a sick body cannot heal. That leaves a window to act.
+- Cures: chemically lively but energy-dead matter eaten by a poisoned body binds the toxin instead of adding to it - the wet earth (clay-eating), and the bitter herb (new base material 11), which is far stronger for its weight but mildly harmful to a well body. An AI that feels the sickness loosen remembers that material as a cure forever; nothing else teaches it. The desperate road is deliberate: a sick AI with no known cure will put strange and even known-bitter things back in its mouth.
+- The herb grows thinly almost everywhere, but only on ground first seen from material placement version 2 on; the permanent world will have it from birth.
+- Cooking: a meal eaten beside a fire is held to it. It feeds about a third better - unless attention slips (about 1 in 7) and it chars. Poison does not cook away.
+- Tastes are personal and lifelong: fondness grows for foods eaten warm and foods that ended real hunger, and sours for what charred or poisoned. Tastes steer what each AI chooses to eat, and feed step 5 (contentment, and the cook whose meals everyone wants).

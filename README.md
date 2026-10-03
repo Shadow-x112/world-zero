@@ -48,8 +48,8 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
    - 4b. Combining, tools, fire and usefulness
      - **Items, tinkering, bind + shape, tools that matter** ✅
      - **Mix: paste and bricks** ✅
-     - Fire: dangerous from day one
-     - Cooking and medicine
+     - **Fire: dangerous from day one** ✅
+     - **Cooking and medicine** ✅
 5. Learning: specialization, personality, teaching, emergent language
 6. Server deployment (24/7)
 7. 3D viewer, speed controls, AI inspector, chronicle

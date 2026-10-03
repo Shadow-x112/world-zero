@@ -1,10 +1,11 @@
 // What agents can do, and how each action plays out tick by tick.
 
 import type { ActionType, Agent } from "./agent.ts";
-import { EAT, GATHER, INSPECT, SHELTER_WORTH_REMEMBERING, TASTE } from "./foraging.ts";
+import { EAT, GATHER, INSPECT, SHELTER_WORTH_REMEMBERING, TASTE, TREAT } from "./foraging.ts";
 import { BUILD, wakeAtNest } from "./building.ts";
 import { TINKER } from "./tinker.ts";
 import { shelterAt } from "../building/structures.ts";
+import { WARMTH_FULL, fireDanger, warmthAt } from "../world/fire.ts";
 import {
   MAX_LEG,
   TICKS_PER_MINUTE,
@@ -15,6 +16,7 @@ import {
   type AgentContext,
 } from "./movement.ts";
 import { RATES } from "./needs.ts";
+import type { World } from "../core/world.ts";
 import { sightRadius } from "./senses.ts";
 
 export * from "./movement.ts";
@@ -106,9 +108,10 @@ const BED_RADIUS = 2;
 export const NEST_NIGHT_RADIUS = 300;
 export const SHELTER_NIGHT_RADIUS = 150;
 
-/** How warm a night at a place would be (1 = no chill at all), with or without company. */
-function warmth(shelter: number, company: boolean): number {
-  return 1 - (1 - Math.min(1, shelter)) * (company ? RATES.huddleFactor : 1);
+/** How warm a night at a place would be (1 = no chill at all): shelter, company, and any fire near it. */
+function warmth(world: World, x: number, y: number, shelter: number, company: boolean): number {
+  const fire = 1 - WARMTH_FULL * Math.min(1, warmthAt(world, x, y));
+  return 1 - (1 - Math.min(1, shelter)) * (company ? RATES.huddleFactor : 1) * fire;
 }
 
 /**
@@ -126,13 +129,13 @@ export function nightDestination(agent: Agent, ctx: AgentContext): { x: number; 
     }
     return false;
   };
-  const hereWarmth = warmth(shelterAt(world, agent.tileX, agent.tileY), ctx.index.any(agent.x, agent.y, RATES.companyRadius, agent));
+  const hereWarmth = warmth(world, agent.tileX, agent.tileY, shelterAt(world, agent.tileX, agent.tileY), ctx.index.any(agent.x, agent.y, RATES.companyRadius, agent));
   let best: { x: number; y: number; shelter: boolean } | null = null;
   let bestScore = hereWarmth + 0.05;
   const consider = (x: number, y: number, radius: number, bonus: number, shelter: boolean, company?: boolean) => {
     const dist = Math.hypot(x - agent.x, y - agent.y);
     if (dist > radius || !grid.isWalkable(x, y)) return;
-    const score = warmth(shelterAt(world, x, y), company ?? othersNear(x, y)) + bonus - dist / 300;
+    const score = warmth(world, x, y, shelterAt(world, x, y), company ?? othersNear(x, y)) + bonus - dist / 300;
     if (score > bestScore) {
       bestScore = score;
       best = { x, y, shelter };
@@ -176,12 +179,12 @@ function bestBed(agent: Agent, ctx: AgentContext): [number, number] | null {
     for (let ox = -BED_RADIUS; ox <= BED_RADIUS; ox++) {
       const x = ax + ox;
       const y = ay + oy;
-      if (!grid.isWalkable(x, y)) continue;
+      if (!grid.isWalkable(x, y) || fireDanger(world, x, y) !== null) continue; // never bed down against the flames
       const lying = ctx.index.near(x, y, 0.6, agent).filter((o) => o.agent.asleep);
       if (lying.length >= SLEEPERS_PER_TILE) continue;
       const owner = owners.get(`${x},${y}`);
       if (owner && lying.length > 0 && !lying.some((o) => o.agent === owner)) continue; // keep the owner's place
-      let score = shelterAt(world, x, y) - 0.02 * Math.hypot(ox, oy);
+      let score = shelterAt(world, x, y) + 0.25 * warmthAt(world, x, y) - 0.02 * Math.hypot(ox, oy);
       if (agent.nest && agent.nest.x === x && agent.nest.y === y) score += 0.15;
       else if (owner) score -= 0.05;
       if (score > bestScore) {
@@ -200,6 +203,9 @@ function lieDown(agent: Agent, ctx: AgentContext): void {
   const world = ctx.world;
   const x = agent.tileX;
   const y = agent.tileY;
+  if (warmthAt(world, x, y) > 0.4 && world.isFirst("hearthNight")) {
+    world.chronicle.add(world.tick, "fire", `${agent.label} lay down to sleep in the warmth of a fire.`, { agentId: agent.id, x, y });
+  }
   if (shelterAt(world, x, y) < 0.5) return;
   const builder = world.grid.peek("roofBy", x, y);
   if (builder !== 0 && builder !== agent.id && world.isFirst("borrowedShelter")) {
@@ -333,6 +339,51 @@ const socialize: ActionDef = {
   },
 };
 
+/** Picks and routes to the safest open tile a few steps out, away from every nearby flame. */
+function planEscape(agent: Agent, ctx: AgentContext): boolean {
+  const world = ctx.world;
+  let best: [number, number] | null = null;
+  let bestScore = -Infinity;
+  for (let oy = -4; oy <= 4; oy++) {
+    for (let ox = -4; ox <= 4; ox++) {
+      const d = Math.max(Math.abs(ox), Math.abs(oy));
+      if (d < 2) continue;
+      const x = agent.tileX + ox;
+      const y = agent.tileY + oy;
+      if (!world.grid.isWalkable(x, y) || fireDanger(world, x, y) !== null) continue;
+      let nearestFire = Infinity;
+      for (const f of world.fireTiles.values()) {
+        const df = Math.max(Math.abs(f.x - x), Math.abs(f.y - y));
+        if (df < nearestFire) nearestFire = df;
+      }
+      const score = Math.min(nearestFire, 8) - d * 0.3;
+      if (score > bestScore) {
+        bestScore = score;
+        best = [x, y];
+      }
+    }
+  }
+  if (!best) return false;
+  agent.action!.targetX = best[0];
+  agent.action!.targetY = best[1];
+  return planRoute(agent, ctx, best[0], best[1]);
+}
+
+/** Away from the flames, now. Never chosen; forced by the fire reflex in brain.ts. */
+const flee: ActionDef = {
+  type: "flee",
+  start(agent, ctx) {
+    return planEscape(agent, ctx);
+  },
+  step(agent, ctx) {
+    const inDanger = fireDanger(ctx.world, agent.tileX, agent.tileY) !== null;
+    // A route the fire itself has cut off (or none at all): pick a new way out.
+    if (!agent.hasPath() && inDanger && !planEscape(agent, ctx)) return false; // trapped: keep trying
+    const done = followPath(agent, ctx);
+    return done && fireDanger(ctx.world, agent.tileX, agent.tileY) === null;
+  },
+};
+
 const idle: ActionDef = {
   type: "idle",
   start(agent, ctx) {
@@ -356,12 +407,14 @@ const idle: ActionDef = {
 export const ACTIONS: Record<ActionType, ActionDef> = {
   sleep,
   eat: EAT,
+  treat: TREAT,
   seekFood,
   taste: TASTE,
   inspect: INSPECT,
   gather: GATHER,
   tinker: TINKER,
   build: BUILD,
+  flee,
   explore,
   socialize,
   idle,

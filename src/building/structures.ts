@@ -7,6 +7,7 @@
 // material's properties. No block type is named or special-cased.
 
 import type { System, World } from "../core/world.ts";
+import { hashFloat } from "../core/rng.ts";
 import type { MaterialType } from "../materials/registry.ts";
 import { CHUNK_SIZE, Terrain, type Chunk } from "../world/chunk.ts";
 import type { Grid } from "../world/grid.ts";
@@ -263,7 +264,7 @@ export class Structures implements System {
 
   weather(world: World): void {
     const grid = world.grid;
-    const rng = world.rng;
+    const seed = world.meta.seed;
     let wallsLost = false;
     const chunks = [...grid.changedChunks()];
     for (const chunk of chunks) {
@@ -275,7 +276,7 @@ export class Structures implements System {
           const type = world.materials.get(chunk.layer(LAYER[level].mat)[i]);
           const loss = type ? FULL_HP / blockLifeDays(type) : FULL_HP;
           let whole = Math.floor(loss);
-          if (rng.next() < loss - whole) whole++;
+          if (hashFloat(seed, level === "wall" ? 8302 : 8303, x, y, world.tick) < loss - whole) whole++;
           const hp = hpLayer[i] - whole;
           if (hp <= 0) gone.push([x, y]);
           else grid.set(LAYER[level].hp, x, y, hp);

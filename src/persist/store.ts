@@ -27,7 +27,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 5;
+export const SAVE_FORMAT_VERSION = 7;
 
 interface SavedChunk {
   cx: number;
@@ -129,6 +129,31 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
         recentlyDropped: [],
         known: (a.known as number[]).flatMap((key) => [key, data.tick]),
         stats: { ...a.stats, crafted: 0 },
+      })),
+    },
+  }),
+  // 5 -> 6: fire. Bodies can carry burn damage; burning ground lives in a
+  // chunk layer, so the ground itself needs no change.
+  5: (data) => ({
+    ...data,
+    format: 6,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({ ...a, damage: { ...a.damage, burns: 0 } })),
+    },
+  }),
+  // 6 -> 7: cooking and medicine. Bodies carry lingering toxin; tastes form.
+  6: (data) => ({
+    ...data,
+    format: 7,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({
+        ...a,
+        toxin: 0,
+        toxinFrom: 0,
+        tastes: {},
+        stats: { ...a.stats, cooked: 0 },
       })),
     },
   }),

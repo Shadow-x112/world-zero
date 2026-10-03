@@ -44,10 +44,12 @@ export const LAYERS: Record<string, LayerKind> = {
   roofHp: "u16",
   roofBy: "i32",
   roofDay: "u16",
+  /** Fire burning on the tile: remaining fuel in tenths of an hour (0 = no fire). */
+  fire: "u16",
 };
 
 /** Layers that only exist in chunks that need them (everything else is created with the chunk). */
-export const LAZY_LAYERS = new Set(["wall", "wallHp", "wallBy", "wallDay", "roof", "roofHp", "roofBy", "roofDay"]);
+export const LAZY_LAYERS = new Set(["wall", "wallHp", "wallBy", "wallDay", "roof", "roofHp", "roofBy", "roofDay", "fire"]);
 
 export const Terrain = {
   open: 0,
@@ -85,6 +87,7 @@ export class Chunk {
   private terrainCache: LayerArray | null = null;
   private heightCache: LayerArray | null = null;
   private wallCache: LayerArray | null = null;
+  private fireCache: LayerArray | null = null;
 
   constructor(cx: number, cy: number, generatorVersion: number) {
     this.cx = cx;
@@ -128,10 +131,16 @@ export class Chunk {
     return this.wallCache;
   }
 
+  /** The fire layer, or null if nothing ever burned here. */
+  get fireLayer(): LayerArray | null {
+    return this.fireCache;
+  }
+
   private cache(name: string, array: LayerArray): void {
     if (name === "terrain") this.terrainCache = array;
     else if (name === "height") this.heightCache = array;
     else if (name === "wall") this.wallCache = array;
+    else if (name === "fire") this.fireCache = array;
   }
 
   get heightLayer(): LayerArray {

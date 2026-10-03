@@ -20,9 +20,9 @@ import { serializeWorld, deserializeWorld } from "../src/persist/store.ts";
 import { CARRY_CAPACITY, addCarried, carriedFood, handle, isFoodTo, roomFor, taste } from "../src/agents/foraging.ts";
 import { updateBody } from "../src/agents/needs.ts";
 
-test("the base set: 10 materials, each defined by all 8 properties between 0 and 1", () => {
-  assert.equal(BASE_MATERIALS.length, 10);
-  assert.equal(new Set(BASE_MATERIALS.map((m) => m.id)).size, 10);
+test("the base set: 11 materials, each defined by all 8 properties between 0 and 1", () => {
+  assert.equal(BASE_MATERIALS.length, 11);
+  assert.equal(new Set(BASE_MATERIALS.map((m) => m.id)).size, 11);
   for (const m of BASE_MATERIALS) {
     assert.deepEqual(Object.keys(m.props).sort(), [...PROPERTIES].sort());
     for (const v of Object.values(m.props)) assert.ok(v >= 0 && v <= 1);
@@ -40,10 +40,10 @@ test("materials are described by their properties, not names", () => {
 test("the creator can add new materials; they survive save and load", () => {
   const world = World.create({ seed: 1 });
   const id = world.materials.add({ hardness: 1, sharpness: 0, flexibility: 0, mass: 1, energy: 1, nourishment: 0, growth: 0, reactivity: 1 }, 5);
-  assert.equal(id, 11);
+  assert.equal(id, 12);
   const loaded = deserializeWorld(JSON.parse(JSON.stringify(serializeWorld(world, 1)))).world;
-  assert.equal(loaded.materials.require(11).custom, true);
-  assert.equal(loaded.materials.all().length, 11);
+  assert.equal(loaded.materials.require(12).custom, true);
+  assert.equal(loaded.materials.all().length, 12);
 });
 
 test("placement is deterministic and only on open ground", () => {
@@ -173,8 +173,8 @@ test("huddling halves the harm of a cold night", () => {
   world.tick = 32 * TICKS_PER_DAY + 3600;
   world.calendar = getCalendar(world.tick);
   for (let i = 0; i < 3600; i++) {
-    updateBody(alone, world, { hasCompany: false, shelter: 0 });
-    updateBody(huddled, world, { hasCompany: true, shelter: 0 });
+    updateBody(alone, world, { hasCompany: false, shelter: 0, warmth: 0, fire: null });
+    updateBody(huddled, world, { hasCompany: true, shelter: 0, warmth: 0, fire: null });
   }
   const lostAlone = 1 - alone.health;
   const lostHuddled = 1 - huddled.health;

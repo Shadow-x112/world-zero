@@ -4,6 +4,7 @@
 import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { System, World } from "../core/world.ts";
 import { addCarried, carriedMass, carryCapacity } from "../agents/foraging.ts";
+import { warmthAt } from "../world/fire.ts";
 
 /** How often drying is checked, in ticks (every world quarter hour). */
 export const DRYING_INTERVAL = TICKS_PER_DAY / 96;
@@ -29,6 +30,14 @@ export function depositUnits(world: World, x: number, y: number, material: numbe
   return 0; // nowhere to put it: lost
 }
 
+/** A fire near a wet thing hurries it along (heat drives the water out). */
+function hurryDrying(world: World, x: number, y: number, items: { dryAtTick?: number }[]): void {
+  if (world.fireTiles.size === 0 || warmthAt(world, x, y) < 0.5) return;
+  for (const item of items) {
+    if (item.dryAtTick !== undefined) item.dryAtTick -= DRYING_INTERVAL * 5;
+  }
+}
+
 function firstBricks(world: World, who: string): void {
   if (world.isFirst("brick")) {
     world.chronicle.add(world.tick, "crafting", `${who} dried hard: bricks, a material the world never made on its own.`, {});
@@ -44,6 +53,7 @@ export class Drying implements System {
 
     for (const agent of world.population.all()) {
       if (agent.items.length === 0) continue;
+      hurryDrying(world, agent.tileX, agent.tileY, agent.items);
       const dried = agent.items.filter((i) => i.dryAtTick !== undefined && i.dryAtTick <= tick);
       if (dried.length === 0) continue;
       agent.items = agent.items.filter((i) => !dried.includes(i));
@@ -62,6 +72,7 @@ export class Drying implements System {
 
     for (const g of world.groundItems.all()) {
       const item = g.item;
+      if (item.dryAtTick !== undefined) hurryDrying(world, g.x, g.y, [item]);
       if (item.dryAtTick === undefined || item.dryAtTick > tick) continue;
       world.groundItems.take(g.x, g.y, item.id);
       if (!item.yields) continue;

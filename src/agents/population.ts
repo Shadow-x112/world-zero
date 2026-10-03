@@ -89,7 +89,7 @@ export class Population {
       lifespanTicks,
       needs: { energy: 1, rest: 1, social: 1, curiosity: 0.7 },
       health: 1,
-      damage: { starvation: 0, exhaustion: 0, exposure: 0, "old age": 0, injury: 0, poisoning: 0 },
+      damage: { starvation: 0, exhaustion: 0, exposure: 0, "old age": 0, injury: 0, poisoning: 0, burns: 0 },
       asleep: false,
       action: null,
       nextDecisionTick: tick + rng.int(0, 30),
@@ -104,6 +104,9 @@ export class Population {
       items: [],
       tried: {},
       recentlyDropped: [],
+      toxin: 0,
+      toxinFrom: 0,
+      tastes: {},
       coldMemory: 0,
       nest: null,
       lastSleep: null,
@@ -111,7 +114,7 @@ export class Population {
       placedSinceWake: { wall: 0, roof: 0 },
       feltShelter: -1,
       shelterSpots: [],
-      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0, crafted: 0 },
+      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0, crafted: 0, cooked: 0 },
     };
     const agent = new Agent(data);
     this.add(agent);

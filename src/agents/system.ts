@@ -10,11 +10,13 @@ import { BODY_DAYS } from "./population.ts";
 import { SpatialIndex, learnAround } from "./senses.ts";
 import { shelterAt } from "../building/structures.ts";
 import { dropEverything } from "./foraging.ts";
+import { fireDanger, warmthAt } from "../world/fire.ts";
 
 /** Days after which unseen ground fades from an AI's memory of the world. */
 export const KNOWN_FADE_DAYS = 12;
 
 const DEATH_WORDS: Record<DeathCause, string> = {
+  burns: "burned to death",
   starvation: "starved",
   exhaustion: "collapsed from exhaustion and never woke",
   exposure: "died of cold in the open night",
@@ -57,7 +59,9 @@ export class AgentSystem implements System {
       const hasCompany = this.index.any(agent.x, agent.y, RATES.companyRadius, agent);
       // Shelter only matters to a sleeper or on a cold night, so it is only measured then.
       const shelter = agent.asleep || chilly ? shelterAt(world, agent.tileX, agent.tileY) : 0;
-      const cause = updateBody(agent, world, { hasCompany, shelter });
+      const fire = fireDanger(world, agent.tileX, agent.tileY);
+      const warmth = chilly || agent.asleep ? warmthAt(world, agent.tileX, agent.tileY) : 0;
+      const cause = updateBody(agent, world, { hasCompany, shelter, warmth, fire });
       if (cause) {
         this.kill(world, agent, cause);
         continue;

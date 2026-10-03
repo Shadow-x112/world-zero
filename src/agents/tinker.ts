@@ -21,6 +21,8 @@ import {
   type Attempt,
 } from "../items/crafting.ts";
 import type { Agent } from "./agent.ts";
+import { buildUrge } from "./building.ts";
+import { warmthAt } from "../world/fire.ts";
 import { approach, goTo, handle, pickupTicks, roomFor, survey, takeFromTile } from "./foraging.ts";
 import type { ActionDef, AgentContext } from "./movement.ts";
 
@@ -32,8 +34,14 @@ export const NOVELTY_REWARD = 0.35;
 export function bestAttempt(agent: Agent, ctx: AgentContext): { attempt: Attempt; interest: number } | null {
   const world = ctx.world;
   let best: { attempt: Attempt; interest: number } | null = null;
+  // Cold in the bones and no warmth near the sleeping place: a flame first.
+  const needsFire =
+    buildUrge(agent, world) > 0.05 &&
+    warmthAt(world, agent.tileX, agent.tileY) <= 0.3 &&
+    (agent.nest === null || warmthAt(world, agent.nest.x, agent.nest.y) <= 0.3);
   for (const attempt of possibleAttempts(agent, world)) {
-    const interest = interestIn(agent, attempt, probeResult(attempt, world, agent));
+    let interest = interestIn(agent, attempt, probeResult(attempt, world, agent));
+    if (needsFire && attempt.verb === "heat") interest = Math.max(interest, 1.5);
     if (interest > 0.05 && (!best || interest > best.interest)) best = { attempt, interest };
   }
   return best;
@@ -152,7 +160,7 @@ export const TINKER: ActionDef = {
 
 function recordFirsts(agent: Agent, ctx: AgentContext, result: ReturnType<typeof performAttempt>, verb: string): void {
   const world = ctx.world;
-  if (!result) return;
+  if (!result || result === true) return; // successes without an item tell their own story
   const what = describeItem(result);
   if (verb === "bundle" && world.isFirst("bundle")) {
     world.chronicle.add(world.tick, "crafting", `${agent.label} wove fibers into ${what}: things can be carried now.`, {

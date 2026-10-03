@@ -6,6 +6,7 @@ import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { System, World } from "../core/world.ts";
 import { CHUNK_SIZE, Chunk } from "../world/chunk.ts";
 import { isRipe, regrows } from "./registry.ts";
+import { hashFloat } from "../core/rng.ts";
 
 /** How often regrowth is applied, in ticks (one world hour). */
 export const REGROW_INTERVAL = TICKS_PER_DAY / 24;
@@ -29,7 +30,7 @@ export class Regrowth implements System {
     const seasonFactor = SEASON_GROWTH[season] ?? 0;
     if (seasonFactor === 0) return;
     const registry = world.materials;
-    const rng = world.rng;
+    const seed = world.meta.seed;
 
     for (const chunk of world.grid.changedChunks()) {
       const material = chunk.layer("material");
@@ -44,7 +45,10 @@ export class Regrowth implements System {
         if (type.ripeIn && !isRipe(type, season)) continue;
         const expected = type.props.growth * REGROW_RATE * seasonFactor * type.maxAmount;
         let gain = Math.floor(expected);
-        if (rng.next() < expected - gain) gain++;
+        // Hashed, not drawn from the shared stream: the same tile at the same hour
+        // regrows the same way whatever order chunks are visited in (or loaded).
+        const [tx, ty] = tileOf(chunk, i);
+        if (hashFloat(seed, 8301, tx, ty, world.tick) < expected - gain) gain++;
         if (gain > 0) {
           amount[i] = Math.min(type.maxAmount, amount[i] + gain);
           changed = true;

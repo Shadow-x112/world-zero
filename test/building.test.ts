@@ -191,9 +191,9 @@ test("shelter cuts the cold in proportion; enough of it lets a body heal", () =>
   world.calendar = getCalendar(world.tick);
   for (const x of [a, b, c]) x.health = 0.8;
   for (let i = 0; i < 3600; i++) {
-    updateBody(a, world, { hasCompany: false, shelter: 0 });
-    updateBody(b, world, { hasCompany: false, shelter: 0.5 });
-    updateBody(c, world, { hasCompany: true, shelter: 0.9 });
+    updateBody(a, world, { hasCompany: false, shelter: 0, warmth: 0, fire: null });
+    updateBody(b, world, { hasCompany: false, shelter: 0.5, warmth: 0, fire: null });
+    updateBody(c, world, { hasCompany: true, shelter: 0.9, warmth: 0, fire: null });
   }
   const lostA = 0.8 - a.health;
   const lostB = 0.8 - b.health;
@@ -212,7 +212,7 @@ test("remembered cold drives the urge to build, and fades through the warm seaso
   assert.equal(buildUrge(agent, world), 1);
   world.tick = 2 * TICKS_PER_DAY;
   world.calendar = getCalendar(world.tick);
-  for (let i = 0; i < 20 * TICKS_PER_DAY; i++) updateBody(agent, world, { hasCompany: true, shelter: 0 }), (agent.needs.energy = 1), (agent.needs.rest = 1);
+  for (let i = 0; i < 20 * TICKS_PER_DAY; i++) updateBody(agent, world, { hasCompany: true, shelter: 0, warmth: 0, fire: null }), (agent.needs.energy = 1), (agent.needs.rest = 1);
   assert.ok(agent.coldMemory < 0.4 * 0.4 && agent.coldMemory > 0.4 * 0.3, `after two warm seasons: ${agent.coldMemory}`);
 });
 
@@ -285,7 +285,7 @@ test("a step-3 save (format 3) upgrades: agents keep their cold as a memory", ()
     a.damage.exposure = 0.3;
   }
   const upgraded = deserializeWorld(data).world;
-  assert.equal(SAVE_FORMAT_VERSION, 5);
+  assert.equal(SAVE_FORMAT_VERSION, 7);
   for (const a of upgraded.population.all()) {
     assert.equal(a.coldMemory, 0.3);
     assert.equal(a.nest, null);

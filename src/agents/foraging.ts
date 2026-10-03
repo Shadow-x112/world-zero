@@ -11,12 +11,15 @@ import {
   TASTED,
   UNIT_ENERGY,
   VISIBLE,
+  absorbPerUnit,
   describe,
   harmPerUnit,
   isRipe,
   regrows,
   type MaterialType,
 } from "../materials/registry.ts";
+import { SICK_TOXIN } from "./needs.ts";
+import { warmthAt } from "../world/fire.ts";
 import type { Agent, Carried, MaterialKnowledge } from "./agent.ts";
 import { followPath, planRoute, type ActionDef, type AgentContext } from "./movement.ts";
 import { sightRadius } from "./senses.ts";
@@ -75,7 +78,7 @@ export function taste(agent: Agent, world: World, type: MaterialType): void {
   const firstTime = !k.tasted;
   k.tasted = true;
   for (const p of TASTED) k.props[p] = type.props[p];
-  consumeEffect(agent, type);
+  consumeEffect(agent, world, type);
   if (firstTime && world.isFirst(`taste:${type.id}`)) {
     const nourishing = type.props.nourishment >= FOOD_THRESHOLD;
     const harmful = harmPerUnit(type) > 0;
@@ -87,14 +90,45 @@ export function taste(agent: Agent, world: World, type: MaterialType): void {
   }
 }
 
-/** What eating one unit does to a body. */
-function consumeEffect(agent: Agent, type: MaterialType): void {
-  agent.needs.energy = Math.min(1, agent.needs.energy + type.props.nourishment * UNIT_ENERGY);
+/**
+ * What eating one unit does to a body. Poison mostly lingers as toxin rather
+ * than striking at once - and in an already-poisoned body, a chemically lively
+ * mouthful binds the toxin instead of adding to it. That is how cures work,
+ * and how they are discovered.
+ */
+export function consumeEffect(agent: Agent, world: World, type: MaterialType, cookFactor = 1): "fed" | "poisoned" | "bound" {
+  agent.needs.energy = Math.min(1, agent.needs.energy + type.props.nourishment * cookFactor * UNIT_ENERGY);
   const harm = harmPerUnit(type);
-  if (harm > 0) {
-    agent.health -= harm;
-    agent.damage.poisoning += harm;
+  if (harm <= 0) return "fed";
+  const sick = agent.toxin >= SICK_TOXIN;
+  // Only a DIFFERENT lively substance binds a toxin; more of the same just deepens it.
+  const binds = type.id === agent.toxinFrom ? 0 : absorbPerUnit(type);
+  if (sick && binds > 0) {
+    const wasBad = agent.toxin;
+    agent.toxin = Math.max(0, agent.toxin - binds);
+    const cost = harm * 0.15; // most of its liveliness went into the toxin, not the body
+    agent.health -= cost;
+    agent.damage.poisoning += cost;
+    const k = notice(agent, world, type);
+    if (!k.curative) {
+      k.curative = true;
+      if (world.isFirst("cure")) {
+        world.chronicle.add(
+          world.tick,
+          "discovery",
+          `${agent.label}, sick with poison, ate ${describe(type.props)} and felt the sickness loosen its grip: the first cure.`,
+          { agentId: agent.id, material: type.id, toxinBefore: wasBad },
+        );
+      }
+    }
+    return "bound";
   }
+  const sting = harm * 0.2;
+  agent.health -= sting;
+  agent.damage.poisoning += sting;
+  agent.toxin = Math.min(1, agent.toxin + harm * 0.8);
+  agent.toxinFrom = type.id;
+  return "poisoned";
 }
 
 /** Whether this AI knows the material to be food (and it is in season). */
@@ -231,8 +265,9 @@ export function carriedFood(agent: Agent, world: World): Carried | null {
   for (const c of agent.carrying) {
     const type = world.materials.get(c.material);
     if (!type || !isFoodTo(agent, type, world.calendar.season)) continue;
-    if (type.props.nourishment > bestN) {
-      bestN = type.props.nourishment;
+    const appeal = type.props.nourishment * (1 + 0.25 * tasteFor(agent, c.material));
+    if (appeal > bestN) {
+      bestN = appeal;
       best = c;
     }
   }
@@ -266,6 +301,10 @@ export interface Survey {
   unhandled: Spot | null;
   /** Nearest visible material it doesn't eat (something to build with). */
   buildable: Spot | null;
+  /** Nearest visible material it knows to loosen poison-sickness. */
+  cure: Spot | null;
+  /** Nearest visible material it knows stings (a sick body will chance anything). */
+  bitter: Spot | null;
 }
 
 const surveys = new WeakMap<Agent, { tick: number; survey: Survey }>();
@@ -287,7 +326,7 @@ function look(agent: Agent, ctx: AgentContext): Survey {
   const r2 = radius * radius;
   const ax = agent.tileX;
   const ay = agent.tileY;
-  const out: Survey = { food: null, untasted: null, unhandled: null, buildable: null };
+  const out: Survey = { food: null, untasted: null, unhandled: null, buildable: null, cure: null, bitter: null };
   const seenFood: Spot[] = [];
 
   for (let oy = -radius; oy <= radius; oy++) {
@@ -313,6 +352,18 @@ function look(agent: Agent, ctx: AgentContext): Survey {
       }
       if (!k.handled && (!out.unhandled || dist < out.unhandled.dist)) out.unhandled = { x, y, material: id, dist };
       if (!isKnownFood(agent, type) && (!out.buildable || dist < out.buildable.dist)) out.buildable = { x, y, material: id, dist };
+      if (k.curative && (!out.cure || dist < out.cure.dist)) out.cure = { x, y, material: id, dist };
+      // A sick body will chance bitter things - but never more of what poisoned
+      // it, and not what it has already learned to hate (taste aversion).
+      if (
+        k.tasted &&
+        (k.props.reactivity ?? 0) >= 0.3 &&
+        id !== agent.toxinFrom &&
+        tasteFor(agent, id) > -0.5 &&
+        (!out.bitter || dist < out.bitter.dist)
+      ) {
+        out.bitter = { x, y, material: id, dist };
+      }
     }
   }
 
@@ -416,8 +467,41 @@ export function approach(agent: Agent, ctx: AgentContext): "arrived" | "walking"
   return "walking";
 }
 
+/** How much this AI likes a material as food, -1..1. */
+export function tasteFor(agent: Agent, material: number): number {
+  return agent.tastes[material] ?? 0;
+}
+
+function shiftTaste(agent: Agent, material: number, delta: number): void {
+  const next = Math.max(-1, Math.min(1, (agent.tastes[material] ?? 0) + delta));
+  if (next === 0 && agent.tastes[material] === undefined) return;
+  agent.tastes[material] = next;
+}
+
 function eatOne(agent: Agent, world: World, type: MaterialType): void {
-  consumeEffect(agent, type);
+  // A meal beside a fire gets held to it: cooked food feeds better - unless
+  // attention slips and it chars. Poison does not cook away.
+  const atFire = warmthAt(world, agent.tileX, agent.tileY) >= 0.5;
+  let cookFactor = 1;
+  let charred = false;
+  if (atFire && type.props.nourishment > 0) {
+    charred = world.rng.chance(0.15);
+    cookFactor = charred ? 0.7 : 1.35;
+    agent.stats.cooked++;
+    if (!charred && world.isFirst("cookedMeal")) {
+      world.chronicle.add(world.tick, "fire", `${agent.label} held its food to the fire and ate it warm: the first cooked meal.`, {
+        agentId: agent.id,
+        material: type.id,
+      });
+    }
+  }
+  const result = consumeEffect(agent, world, type, cookFactor);
+  // Tastes grow from what a life actually feeds you: warm meals and meals
+  // that ended real hunger endear a food; charred or poisonous ones sour it.
+  const hungry = agent.needs.energy < 0.5;
+  if (result === "poisoned") shiftTaste(agent, type.id, -0.3);
+  else if (charred) shiftTaste(agent, type.id, -0.02);
+  else shiftTaste(agent, type.id, 0.015 + (atFire ? 0.035 : 0) + (hungry ? 0.02 : 0));
   const k = notice(agent, world, type);
   k.timesEaten++;
   agent.stats.meals++;
@@ -483,7 +567,8 @@ export const EAT: ActionDef = {
 export const TASTE: ActionDef = {
   type: "taste",
   start(agent, ctx) {
-    const spot = survey(agent, ctx).untasted;
+    const seen = survey(agent, ctx);
+    const spot = seen.untasted ?? (agent.toxin >= SICK_TOXIN ? seen.bitter : null);
     if (!spot) return false;
     agent.action!.material = spot.material;
     return goTo(agent, ctx, spot);
@@ -522,6 +607,61 @@ export const INSPECT: ActionDef = {
       if (handle(agent, world, type)) agent.needs.curiosity = Math.min(1, agent.needs.curiosity + 0.1);
     }
     return true;
+  },
+};
+
+/** The carried material this AI knows to loosen poison-sickness, if any. */
+export function carriedCure(agent: Agent, world: World): Carried | null {
+  for (const c of agent.carrying) {
+    if (agent.knowledge[c.material]?.curative && world.materials.get(c.material)) return c;
+  }
+  return null;
+}
+
+/** Whether a sick AI has any way to treat itself: a cure in hand or in sight. */
+export function hasCureOption(agent: Agent, ctx: AgentContext): boolean {
+  return carriedCure(agent, ctx.world) !== null || survey(agent, ctx).cure !== null;
+}
+
+/** Treat: sick with poison, eat what it knows binds it. */
+export const TREAT: ActionDef = {
+  type: "treat",
+  start(agent, ctx) {
+    const a = agent.action!;
+    a.untilTick = ctx.world.tick + BITE_TICKS;
+    if (carriedCure(agent, ctx.world)) return true;
+    const spot = survey(agent, ctx).cure;
+    if (!spot) return false;
+    a.material = spot.material;
+    return goTo(agent, ctx, spot);
+  },
+  step(agent, ctx) {
+    const world = ctx.world;
+    const a = agent.action!;
+    if (agent.toxin < SICK_TOXIN) return true; // well again
+    if (a.targetX !== undefined) {
+      const state = approach(agent, ctx);
+      if (state === "stuck") return true;
+      if (state === "walking") {
+        a.untilTick = world.tick + BITE_TICKS;
+        return false;
+      }
+    }
+    if (world.tick < (a.untilTick ?? 0)) return false;
+    a.untilTick = world.tick + BITE_TICKS;
+    if (a.targetX === undefined) {
+      const cure = carriedCure(agent, world);
+      if (!cure) return true;
+      const type = world.materials.require(cure.material);
+      cure.units--;
+      if (cure.units <= 0) agent.carrying = agent.carrying.filter((c) => c !== cure);
+      consumeEffect(agent, world, type);
+    } else {
+      const type = takeFromTile(world, a.targetX, a.targetY!, a.material!);
+      if (!type) return true;
+      consumeEffect(agent, world, type);
+    }
+    return agent.toxin < SICK_TOXIN;
   },
 };
 

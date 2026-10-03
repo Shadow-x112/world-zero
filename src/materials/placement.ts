@@ -14,9 +14,10 @@ import { fractalNoise, valueNoise } from "../world/noise.ts";
 import { wildnessAt } from "../world/generator.ts";
 import { BASE_MATERIALS } from "./registry.ts";
 
-export const MATERIAL_VERSION = 1;
+export const MATERIAL_VERSION = 2;
 
 const SALT = {
+  herb: 8200,
   soft: 7100,
   fiber: 7200,
   grove: 7300,
@@ -82,7 +83,20 @@ function placeV1(seed: number, x: number, y: number, terrain: number): Deposit |
   return null;
 }
 
-const PLACERS: Record<number, typeof placeV1> = { 1: placeV1 };
+/** Version 2 = version 1 plus the bitter herb, scattered thinly almost everywhere. */
+function placeV2(seed: number, x: number, y: number, terrain: number): Deposit | null {
+  const v1 = placeV1(seed, x, y, terrain);
+  if (v1) return v1;
+  if (terrain !== Terrain.open) return null;
+  const herb = fractalNoise(seed, SALT.herb, x, y, 24, 2);
+  if (herb > 0.63 && hashFloat(seed, SALT.roll, x, y) < 0.3) {
+    const amount = 1 + Math.round(hashFloat(seed, SALT.amount, x, y) * 2);
+    return { material: 11, amount };
+  }
+  return null;
+}
+
+const PLACERS: Record<number, typeof placeV1> = { 1: placeV1, 2: placeV2 };
 
 export function placeTile(seed: number, x: number, y: number, terrain: number, version = MATERIAL_VERSION): Deposit | null {
   const placer = PLACERS[version];

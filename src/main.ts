@@ -69,6 +69,7 @@ function status(runner: Runner): string {
   if (c.season === "cold") parts.splice(1, 0, `${describeWinter(winterSeverity(w.meta.seed, c.year))} winter`);
   const built = countBlocks(w.grid);
   if (built.walls + built.roofs > 0) parts.splice(4, 0, `${built.walls} walls, ${built.roofs} roofs`);
+  if (w.fireTiles.size > 0) parts.push(`${w.fireTiles.size} fires burning`);
   if (w.meta.generation > 1) parts.unshift(`World ${w.meta.generation}`);
   if (runner.measuredTps > 0) parts.push(`${runner.measuredTps.toFixed(1)} ticks/s`);
   if (runner.lagging || runner.droppedTicks > 0) parts.push(`LAGGING (${runner.droppedTicks} ticks dropped)`);

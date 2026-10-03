@@ -159,7 +159,7 @@ export class Grid {
     return this.getChunk(cx, cy).terrainLayer[(y - cy * CHUNK_SIZE) * CHUNK_SIZE + (x - cx * CHUNK_SIZE)];
   }
 
-  /** Whether a tile can be stood on: open ground with nothing built on it. */
+  /** Whether a tile can be stood on: open ground with nothing built or burning on it. */
   isWalkable(x: number, y: number): boolean {
     const cx = Math.floor(x / CHUNK_SIZE);
     const cy = Math.floor(y / CHUNK_SIZE);
@@ -167,7 +167,9 @@ export class Grid {
     const i = (y - cy * CHUNK_SIZE) * CHUNK_SIZE + (x - cx * CHUNK_SIZE);
     if (chunk.terrainLayer[i] !== Terrain.open) return false;
     const wall = chunk.wallLayer;
-    return wall === null || wall[i] === 0;
+    if (wall !== null && wall[i] !== 0) return false;
+    const fire = chunk.fireLayer;
+    return fire === null || fire[i] === 0;
   }
 
   /** Makes sure every chunk within `radius` tiles of a point exists. */

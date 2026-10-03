@@ -7,6 +7,7 @@ import { TICKS_PER_DAY, WORLD_SECONDS_PER_TICK } from "../core/constants.ts";
 import type { World } from "../core/world.ts";
 import type { Agent, DeathCause } from "./agent.ts";
 import { winterSeverity } from "../world/weather.ts";
+import { BURN_BESIDE_FIRE, BURN_IN_FIRE, WARMTH_FULL } from "../world/fire.ts";
 
 const HOURS_PER_TICK = WORLD_SECONDS_PER_TICK / 3600;
 
@@ -58,7 +59,14 @@ export const RATES = {
 
   /** Damage log entries fade over about 2 days, so the cause of death reflects recent harm. */
   damageLogDecay: 1 / 48,
+
+  /** Poison in the body does its damage at this rate, so a bad dose is hours of sickness, not a blow. */
+  toxinDamage: 0.03,
 } as const;
+
+/** Toxin above this is being properly sick: no healing, and a reason to act.
+ * One bitter mouthful stays below it; a real poisoning goes well past it. */
+export const SICK_TOXIN = 0.08;
 
 /** Old age: from this fraction of lifespan, the body's ceiling on health begins to fall. */
 export const OLD_AGE_START = 0.8;
@@ -88,6 +96,10 @@ export interface BodyContext {
   hasCompany: boolean;
   /** How sheltered the agent's tile is, 0 (open) to 1 (enclosed and covered). */
   shelter: number;
+  /** Warmth from a fire near it, 0-1. */
+  warmth: number;
+  /** Standing in or right beside flames. */
+  fire: "in" | "beside" | null;
 }
 
 /**
@@ -133,9 +145,26 @@ export function updateBody(agent: Agent, world: World, ctx: BodyContext): DeathC
   if (needs.rest <= 0) hurt("exhaustion", RATES.exhaustionDamage * h);
   // Cold-season nights: shelter keeps out its share of the chill, and huddling halves what is left.
   // The harm is remembered, and that memory is what drives the urge to build.
+  // Poison in the body works through it over hours.
+  if (agent.toxin > 1e-4) {
+    const apply = Math.min(agent.toxin, RATES.toxinDamage * h);
+    hurt("poisoning", apply);
+    agent.toxin -= apply;
+  } else if (agent.toxin !== 0) {
+    agent.toxin = 0;
+    agent.toxinFrom = 0;
+  }
+
+  // Flames burn whoever stands in or right beside them.
+  if (ctx.fire === "in") hurt("burns", BURN_IN_FIRE * h);
+  else if (ctx.fire === "beside") hurt("burns", BURN_BESIDE_FIRE * h);
+
   let chill = 0;
   if (cold && cal.light < RATES.exposureLightThreshold) {
-    chill = (1 - Math.min(1, ctx.shelter)) * (ctx.hasCompany ? RATES.huddleFactor : 1);
+    chill =
+      (1 - Math.min(1, ctx.shelter)) *
+      (ctx.hasCompany ? RATES.huddleFactor : 1) *
+      (1 - WARMTH_FULL * Math.min(1, ctx.warmth));
     if (chill > 0) {
       const amount = RATES.exposureDamage * winterSeverity(world.meta.seed, cal.year) * chill * h;
       hurt("exposure", amount);
@@ -145,7 +174,8 @@ export function updateBody(agent: Agent, world: World, ctx: BodyContext): DeathC
   agent.coldMemory *= COLD_KEEP_PER_TICK[cal.season] ?? 1;
 
   // A freezing body can't heal.
-  const canRecover = chill < RATES.warmEnough && needs.energy > RATES.recoverThreshold && needs.rest > RATES.recoverThreshold;
+  const canRecover =
+    chill < RATES.warmEnough && agent.toxin < SICK_TOXIN && needs.energy > RATES.recoverThreshold && needs.rest > RATES.recoverThreshold;
   if (canRecover) agent.health += RATES.healthRecover * h;
 
   // Old age lowers the ceiling health can recover to, and eventually takes it.
