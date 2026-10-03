@@ -17,6 +17,7 @@ import { formatCalendar } from "./core/time.ts";
 import { World } from "./core/world.ts";
 import { agentDetail, agentLine, materialsTable, sheltersReport } from "./inspect.ts";
 import { countBlocks } from "./building/structures.ts";
+import { describeWinter, winterSeverity } from "./world/weather.ts";
 import { Store } from "./persist/store.ts";
 
 const AUTOSAVE_SECONDS = 60;
@@ -64,6 +65,7 @@ function status(runner: Runner): string {
     `${pop.count} alive (${asleep} asleep), ${pop.deaths} dead`,
     `${w.grid.chunkCount} chunks loaded`,
   ];
+  if (c.season === "cold") parts.splice(1, 0, `${describeWinter(winterSeverity(w.meta.seed, c.year))} winter`);
   const built = countBlocks(w.grid);
   if (built.walls + built.roofs > 0) parts.splice(4, 0, `${built.walls} walls, ${built.roofs} roofs`);
   if (w.meta.generation > 1) parts.unshift(`World ${w.meta.generation}`);

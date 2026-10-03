@@ -14,6 +14,7 @@ import { GridMaintenance } from "../world/maintenance.ts";
 import { MaterialRegistry } from "../materials/registry.ts";
 import { Regrowth } from "../materials/regrowth.ts";
 import { Structures } from "../building/structures.ts";
+import { Weather } from "../world/weather.ts";
 
 export interface System {
   readonly name: string;
@@ -74,6 +75,7 @@ export class World {
     this.addSystem(new GridMaintenance());
     this.addSystem(new Regrowth());
     this.addSystem(new Structures());
+    this.addSystem(new Weather());
   }
 
   /** A world rebuilt from saved parts (see persist/store.ts). */

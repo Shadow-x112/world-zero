@@ -23,6 +23,7 @@ import { updateBody, RATES } from "../src/agents/needs.ts";
 import { buildUrge, nestOf, placements, wakeAtNest, wallAllowed } from "../src/agents/building.ts";
 import { serializeWorld, deserializeWorld, SAVE_FORMAT_VERSION } from "../src/persist/store.ts";
 import type { AgentContext } from "../src/agents/movement.ts";
+import { WINTER_MAX, WINTER_MIN, describeWinter, winterSeverity } from "../src/world/weather.ts";
 
 const FIBER = 2;
 const GROVE = 3;
@@ -196,8 +197,9 @@ test("shelter cuts the cold in proportion; enough of it lets a body heal", () =>
   }
   const lostA = 0.8 - a.health;
   const lostB = 0.8 - b.health;
-  assert.ok(Math.abs(lostA - RATES.exposureDamage) < 1e-6);
-  assert.ok(Math.abs(lostB - RATES.exposureDamage / 2) < 1e-6, "half the shelter, half the harm");
+  const hourOfCold = RATES.exposureDamage * winterSeverity(world.meta.seed, world.calendar.year);
+  assert.ok(Math.abs(lostA - hourOfCold) < 1e-6);
+  assert.ok(Math.abs(lostB - hourOfCold / 2) < 1e-6, "half the shelter, half the harm");
   assert.ok(c.health > 0.8, "warm enough to heal");
   assert.ok(a.coldMemory > b.coldMemory && b.coldMemory > c.coldMemory, "the cold is remembered");
 });
@@ -291,4 +293,26 @@ test("a step-3 save (format 3) upgrades: agents keep their cold as a memory", ()
     assert.equal(a.stats.blocksPlaced, 0);
   }
   for (let i = 0; i < 600; i++) upgraded.step();
+});
+
+test("every winter has its own severity: mostly ordinary, sometimes mild, now and then bitter", () => {
+  const all: number[] = [];
+  for (let seed = 1; seed <= 50; seed++) for (let year = 1; year <= 20; year++) all.push(winterSeverity(seed, year));
+  assert.equal(winterSeverity(7, 3), winterSeverity(7, 3), "fixed for a world and year");
+  assert.ok(all.every((v) => v >= WINTER_MIN && v <= WINTER_MAX));
+  const share = (kind: string) => all.filter((v) => describeWinter(v) === kind).length / all.length;
+  assert.ok(share("ordinary") > 0.3, `ordinary ${share("ordinary")}`);
+  assert.ok(share("bitter") > 0.05 && share("bitter") < 0.25, `bitter ${share("bitter")}`);
+  assert.ok(share("mild") > 0.05, `mild ${share("mild")}`);
+});
+
+test("a hard winter is announced as it begins", () => {
+  let seed = 1;
+  while (describeWinter(winterSeverity(seed, 1)) !== "bitter") seed++;
+  const world = World.create({ seed });
+  for (const a of world.population.all()) a.needs.energy = 1;
+  world.tick = 30 * TICKS_PER_DAY - 5;
+  world.calendar = getCalendar(world.tick);
+  for (let i = 0; i < 10; i++) world.step();
+  assert.ok(world.chronicle.all().some((e) => e.kind === "weather" && /bitter/.test(e.text)));
 });

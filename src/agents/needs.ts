@@ -6,6 +6,7 @@
 import { TICKS_PER_DAY, WORLD_SECONDS_PER_TICK } from "../core/constants.ts";
 import type { World } from "../core/world.ts";
 import type { Agent, DeathCause } from "./agent.ts";
+import { winterSeverity } from "../world/weather.ts";
 
 const HOURS_PER_TICK = WORLD_SECONDS_PER_TICK / 3600;
 
@@ -14,8 +15,8 @@ export const RATES = {
   energyDrain: 1 / 72,
   /** Sleeping burns less. */
   energyDrainAsleepFactor: 0.6,
-  /** The cold season makes bodies burn more. */
-  energyDrainColdFactor: 1.3,
+  /** The cold season makes bodies burn more, so food must be stored up from autumn. */
+  energyDrainColdFactor: 1.5,
 
   /** Awake for about 20 hours empties rest. */
   restDrain: 1 / 20,
@@ -38,8 +39,9 @@ export const RATES = {
   starvationDamage: 1 / 48,
   /** With no rest left, health fails over about 3 days (and the agent collapses asleep). */
   exhaustionDamage: 1 / 72,
-  /** A cold-season night in the open costs health; shelter reduces it in proportion. */
-  exposureDamage: 1 / 40,
+  /** A cold-season night in the open costs health (about 60% of it over a whole night, in an
+   * ordinary winter); shelter reduces it in proportion, and each winter's severity scales it. */
+  exposureDamage: 1 / 26,
   /** Light below this counts as night for exposure. */
   exposureLightThreshold: 0.3,
   /** Sleeping close to others cuts exposure harm to this fraction. */
@@ -135,7 +137,7 @@ export function updateBody(agent: Agent, world: World, ctx: BodyContext): DeathC
   if (cold && cal.light < RATES.exposureLightThreshold) {
     chill = (1 - Math.min(1, ctx.shelter)) * (ctx.hasCompany ? RATES.huddleFactor : 1);
     if (chill > 0) {
-      const amount = RATES.exposureDamage * chill * h;
+      const amount = RATES.exposureDamage * winterSeverity(world.meta.seed, cal.year) * chill * h;
       hurt("exposure", amount);
       agent.coldMemory = Math.min(COLD_MEMORY_MAX, agent.coldMemory + amount);
     }

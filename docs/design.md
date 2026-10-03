@@ -135,3 +135,9 @@ How the plan above was turned into numbers. All of these are tunable.
 - A nest left unused for 3 days, far from where the AI now sleeps, is given up, and its next sleeping place becomes the new nest. That way nests (and homes) drift toward where the warm, shared nights are.
 - **Chronicle:** the first thing built, the first roof, the first true shelter (75% or more), the first AI to sleep under a cover someone else built, and the first night three or more slept side by side under shelter.
 - AIs only seek company they can actually reach. Someone in sight across a ridge is not followed.
+
+## Implementation notes (winter)
+
+- Nights are harsher than in the first cut: an ordinary cold-season night in the open costs about 60% of an AI's health alone and unsheltered (shelter still cuts it in proportion, huddling halves what's left).
+- Bodies burn energy half again as fast in the cold season, so food gathered in autumn matters.
+- Every winter has its own severity, fixed from the world's seed and the year (0.8x for the mildest to 1.4x for the harshest). Most are ordinary, many are mild, about one in eleven is bitter; a bitter night in the open costs more health than a full day can restore even while huddled. The chronicle notes a mild, hard or bitter winter as it sets in, and `status` names the kind of winter while it lasts.
