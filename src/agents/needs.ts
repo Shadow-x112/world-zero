@@ -8,6 +8,7 @@ import type { World } from "../core/world.ts";
 import type { Agent, DeathCause } from "./agent.ts";
 import { winterSeverity } from "../world/weather.ts";
 import { BURN_BESIDE_FIRE, BURN_IN_FIRE, WARMTH_FULL } from "../world/fire.ts";
+import { feel, tickEmotions } from "./emotions.ts";
 
 const HOURS_PER_TICK = WORLD_SECONDS_PER_TICK / 3600;
 
@@ -155,9 +156,14 @@ export function updateBody(agent: Agent, world: World, ctx: BodyContext): DeathC
     agent.toxinFrom = 0;
   }
 
-  // Flames burn whoever stands in or right beside them.
-  if (ctx.fire === "in") hurt("burns", BURN_IN_FIRE * h);
-  else if (ctx.fire === "beside") hurt("burns", BURN_BESIDE_FIRE * h);
+  // Flames burn whoever stands in or right beside them - and burn fear into them.
+  if (ctx.fire === "in") {
+    hurt("burns", BURN_IN_FIRE * h);
+    feel(agent, "fear", 2 * h);
+  } else if (ctx.fire === "beside") {
+    hurt("burns", BURN_BESIDE_FIRE * h);
+    feel(agent, "fear", 0.6 * h);
+  }
 
   let chill = 0;
   if (cold && cal.light < RATES.exposureLightThreshold) {
@@ -174,6 +180,9 @@ export function updateBody(agent: Agent, world: World, ctx: BodyContext): DeathC
     }
   }
   agent.coldMemory *= COLD_KEEP_PER_TICK[cal.season] ?? 1;
+
+  // Feelings fade, loneliness gathers or dissolves, warmth on a cold night comforts.
+  tickEmotions(agent, ctx.hasCompany, ctx.warmth, cold);
 
   // A freezing body can't heal.
   const canRecover =

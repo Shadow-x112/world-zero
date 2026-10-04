@@ -11,6 +11,7 @@ import type { Agent, Bond } from "./agent.ts";
 import type { AgentContext } from "./movement.ts";
 import { RATES } from "./needs.ts";
 import { learnAround } from "./senses.ts";
+import { feel, shareFeelings } from "./emotions.ts";
 
 /** How much one quiet hour together adds. */
 export const HOUR_TOGETHER = 0.002;
@@ -80,6 +81,7 @@ export function hourTogether(ctx: AgentContext): void {
       if (other.id < agent.id || other.asleep) continue; // each pair once
       warm(touch(agent, other, tick), HOUR_TOGETHER);
       warm(touch(other, agent, tick), HOUR_TOGETHER);
+      shareFeelings(agent, other); // fear, joy and sorrow pass between people
     }
   }
 }
@@ -101,6 +103,9 @@ export function receivedGift(receiver: Agent, giver: Agent, tick: number): void 
   bond.trust = Math.min(1, bond.trust + GIFT_TRUST);
   bond.affection = Math.min(1, bond.affection + GIFT_TRUST * 0.5);
   touch(giver, receiver, tick);
+  feel(receiver, "joy", 0.15);
+  feel(receiver, "contentment", 0.15);
+  feel(giver, "contentment", 0.1); // giving feels good too
 }
 
 /** The daily quiet work: fading, pairs forming and coming undone, births. */
@@ -126,11 +131,13 @@ export function dailyKinship(ctx: AgentContext): void {
     if (agent.mate !== null) {
       const mate = population.get(agent.mate);
       if (!mate) {
-        agent.mate = null; // grief arrives with emotions (step 5b)
+        agent.mate = null; // the grief itself landed when they died (see emotions.grieveFor)
       } else if ((tick - agent.bondWith(mate.id).lastNear) / TICKS_PER_DAY > PAIR_APART_DAYS) {
         world.chronicle.add(tick, "bond", `${agent.label} and ${mate.label} drifted apart.`, { a: agent.id, b: mate.id });
         agent.mate = null;
         mate.mate = null;
+        feel(agent, "sadness", 0.5);
+        feel(mate, "sadness", 0.5);
       }
     }
   }
@@ -165,6 +172,10 @@ export function dailyKinship(ctx: AgentContext): void {
         agent.home = { x: home.x, y: home.y };
         other.home = { x: home.x, y: home.y };
       }
+      feel(agent, "joy", 0.6);
+      feel(other, "joy", 0.6);
+      feel(agent, "contentment", 0.3);
+      feel(other, "contentment", 0.3);
       const first = world.isFirst("pair") ? "The first pair: " : "";
       world.chronicle.add(tick, "bond", `${first}${agent.label} and ${other.label} began to keep close to each other.`, {
         a: agent.id,
@@ -223,6 +234,10 @@ export function dailyKinship(ctx: AgentContext): void {
       learnAround(child, world); // it opens its eyes somewhere
       agent.lastBirthTick = tick;
       mate.lastBirthTick = tick;
+      feel(agent, "joy", 0.9);
+      feel(mate, "joy", 0.9);
+      feel(agent, "contentment", 0.4);
+      feel(mate, "contentment", 0.4);
       const first = world.isFirst("birth") ? "The first child of the world: " : "A new one: ";
       world.chronicle.add(tick, "birth", `${first}${child.label}, born to ${agent.label} and ${mate.label}. ${population.count} alive.`, {
         child: child.id,

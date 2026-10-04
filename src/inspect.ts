@@ -7,6 +7,7 @@ import { PROPERTIES, describe } from "./materials/registry.ts";
 import { FULL_HP, allBlocks, blockAt, shelterAt } from "./building/structures.ts";
 import { buildUrge } from "./agents/building.ts";
 import { describeItem } from "./items/item.ts";
+import { feelingWords } from "./agents/emotions.ts";
 
 const ACTION_WORDS: Record<string, string> = {
   sleep: "going to sleep",
@@ -110,6 +111,8 @@ export function agentDetail(agent: Agent, world: World): string {
       `  close to  ${closest.map((e) => `#${String(e.id).padStart(2, "0")} (trust ${e.b.trust.toFixed(2)}, affection ${e.b.affection.toFixed(2)})`).join(", ")}`,
     );
   }
+  const feelings = feelingWords(agent);
+  if (feelings.length) lines.push(`  feels     ${feelings.join(", ")}`);
   if (agent.toxin >= 0.01) lines.push(`  sick      poison in the body: ${agent.toxin.toFixed(2)} (drains health until it has worked through)`);
   const liked = Object.entries(agent.tastes)
     .filter(([, v]) => v >= 0.15)

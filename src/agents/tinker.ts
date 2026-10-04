@@ -22,6 +22,7 @@ import {
 } from "../items/crafting.ts";
 import type { Agent } from "./agent.ts";
 import { buildUrge } from "./building.ts";
+import { feel } from "./emotions.ts";
 import { warmthAt } from "../world/fire.ts";
 import { approach, goTo, handle, pickupTicks, roomFor, survey, takeFromTile } from "./foraging.ts";
 import type { ActionDef, AgentContext } from "./movement.ts";
@@ -148,11 +149,16 @@ export const TINKER: ActionDef = {
     const result = performAttempt(best.attempt, world, agent);
     agent.needs.curiosity = Math.min(1, agent.needs.curiosity + TRY_REWARD);
     if (result) {
-      if (neverMade) agent.needs.curiosity = Math.min(1, agent.needs.curiosity + NOVELTY_REWARD);
+      if (neverMade) {
+        agent.needs.curiosity = Math.min(1, agent.needs.curiosity + NOVELTY_REWARD);
+        feel(agent, "joy", 0.35); // it worked, and nothing like it existed before
+        feel(agent, "wonder", 0.3);
+      }
       recordFirsts(agent, ctx, result, best.attempt.verb);
       return true; // made something: step back and look at it
     }
     // Nothing came of it; maybe try again a while longer.
+    feel(agent, "anger", 0.05); // wasted material grates a little
     a.untilTick = world.tick + TINKER_TICKS;
     return world.rng.chance(0.5);
   },

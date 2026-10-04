@@ -19,6 +19,7 @@ import {
   type MaterialType,
 } from "../materials/registry.ts";
 import { SICK_TOXIN } from "./needs.ts";
+import { feel } from "./emotions.ts";
 import { warmthAt } from "../world/fire.ts";
 import type { Agent, Carried, MaterialKnowledge } from "./agent.ts";
 import { followPath, planRoute, type ActionDef, type AgentContext } from "./movement.ts";
@@ -98,6 +99,7 @@ export function taste(agent: Agent, world: World, type: MaterialType): void {
  */
 export function consumeEffect(agent: Agent, world: World, type: MaterialType, cookFactor = 1): "fed" | "poisoned" | "bound" {
   agent.needs.energy = Math.min(1, agent.needs.energy + type.props.nourishment * cookFactor * UNIT_ENERGY);
+  if (cookFactor > 1) feel(agent, "contentment", 0.2); // a warm meal sits well
   const harm = harmPerUnit(type);
   if (harm <= 0) return "fed";
   const sick = agent.toxin >= SICK_TOXIN;
@@ -110,6 +112,7 @@ export function consumeEffect(agent: Agent, world: World, type: MaterialType, co
     agent.health -= cost;
     agent.damage.poisoning += cost;
     const k = notice(agent, world, type);
+    feel(agent, "joy", 0.3); // the grip loosens: relief
     if (!k.curative) {
       k.curative = true;
       if (world.isFirst("cure")) {
@@ -128,6 +131,7 @@ export function consumeEffect(agent: Agent, world: World, type: MaterialType, co
   agent.damage.poisoning += sting;
   agent.toxin = Math.min(1, agent.toxin + harm * 0.8);
   agent.toxinFrom = type.id;
+  feel(agent, "fear", 0.25); // something in the body has turned against it
   return "poisoned";
 }
 
@@ -200,7 +204,10 @@ export function toolDidWork(agent: Agent, world: World, type: MaterialType): voi
       { agentId: agent.id, item: tool.item.id },
     );
   }
-  if (tool.item.wear <= 0) agent.items = agent.items.filter((i) => i !== tool.item);
+  if (tool.item.wear <= 0) {
+    agent.items = agent.items.filter((i) => i !== tool.item);
+    feel(agent, "anger", 0.25); // a good tool, gone mid-work
+  }
 }
 
 /** Sets down the least proven item to make room (remembering not to re-grab it at once). */

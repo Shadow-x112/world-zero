@@ -12,6 +12,7 @@ import { shelterAt } from "../building/structures.ts";
 import { dropEverything } from "./foraging.ts";
 import { fireDanger, warmthAt } from "../world/fire.ts";
 import { dailyKinship, hourTogether } from "./kinship.ts";
+import { grieveFor } from "./emotions.ts";
 
 /** Days after which unseen ground fades from an AI's memory of the world. */
 export const KNOWN_FADE_DAYS = 12;
@@ -93,6 +94,7 @@ export class AgentSystem implements System {
     const population = world.population;
     population.remove(agent.id);
     population.deaths++;
+    grieveFor(world, agent); // the loss lands on everyone who loved it
     const ageDays = agent.ageDays(world.tick);
     population.bodies.push({
       agentId: agent.id,

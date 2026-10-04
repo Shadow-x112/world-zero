@@ -6,6 +6,7 @@
 
 import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { Item } from "../items/item.ts";
+import type { Emotions } from "./emotions.ts";
 
 export interface Needs {
   /** 1 = well fed, 0 = starving. Restored by eating. */
@@ -165,6 +166,8 @@ export interface AgentData {
   toxinFrom: number;
   /** How much it has come to like each material as food (-1..1), shaped by what its life fed it. */
   tastes: Record<string, number>;
+  /** How it feels right now (0-1 each); stirred by events, fading over hours. */
+  emotions: Emotions;
   /** Harm remembered from cold nights; fades in warm seasons. Drives the urge to build. */
   coldMemory: number;
   /** Where it sleeps and builds, once it has started building. */
@@ -243,6 +246,7 @@ export class Agent implements AgentData {
   toxin!: number;
   toxinFrom!: number;
   tastes!: Record<string, number>;
+  emotions!: Emotions;
   coldMemory!: number;
   nest!: Nest | null;
   lastSleep!: { x: number; y: number } | null;

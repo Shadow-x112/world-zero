@@ -165,7 +165,7 @@ How the plan above was turned into numbers. All of these are tunable.
 - A fire lives on a tile and eats fuel by the hour (a unit of grove wood burns about 3 hours; a cold-season night costs an armload). Anyone standing within two tiles of a burning-low fire tosses on burnable stuff they carry, generously toward nightfall.
 - Warmth: within 3 tiles, up to three quarters of the night chill never reaches the body, and a warm body can heal. Light: within 5 tiles the night is bright enough to work, so evenings happen around fires. Nearby wet earth bakes hard into brick, and drying paste hurries along.
 - Danger, from day one: fire spreads to anything burnable beside it - the growth on the ground (fiercest in the dry decline season), fiber and wood walls, and the roof above it, which falls in flames and feeds it. Brick and stone do not burn, and a wall that cannot burn shields what stands behind it. Standing in flames kills in under an hour; the one built-in reflex is to run, even out of sleep. Burned groves are gone for good; burned grass keeps its roots.
-- Fear of fire is NOT built in: respect for it must wait for emotions (step 5), so early fires will cost huts and lives. That is intended.
+- Fear of fire is NOT built in: respect for it must wait for emotions (step 5), so early fires will cost huts and lives. That is intended. (It arrived in 5b: fear is learned from burns, and the freshly burned keep their distance.)
 
 ## Implementation notes (step 4b part 4: cooking and medicine)
 
@@ -185,3 +185,14 @@ How the plan above was turned into numbers. All of these are tunable.
 - Chronicle: first pair, pairs and partings, every birth, the first gift, and the people passing 60, 75, 100...
 - This is what lets the one world live past its founders: the founders age together, and their children carry the world.
 - What five-year test runs taught, and the shape that came out of it: the founders are not strangers (they opened their eyes together, so each begins mildly warm toward all the others); a pair makes ONE home of the better of their two nests and goes back to it together at night - but a home only pulls as hard as it is worth, so a bare patch never draws a couple out of the warm winter pile; lifespans vary more widely (sd 28 days) so the founders' deaths spread over years instead of one terrible winter; old age starts at 90% of lifespan and falls fast; and children sleep in the middle of the pile, so the cold reaches them barely more than adults. With all of that, a good world grows past its founding number, and even a brutal one dips to about twenty through the founders' die-off and climbs back on its second generation.
+
+## Implementation notes (step 5b: emotions)
+
+- Seven feelings, 0-1 each: joy, fear, anger, sadness, contentment, loneliness, wonder. Plain data on the agent; saved exactly (format 9).
+- Nothing is scripted onto anyone: every feeling comes from an event in that one life. Grief at a death scales with the bond (a mate hardest, then family, then friends; strangers feel nothing). Burns and fleeing teach fear; a pairing or a birth or a first-ever creation is joy; new ground and first makings are wonder; a warm cooked meal, a fire on a cold night, giving and receiving food are contentment; a broken tool and wasted material are anger; days alone become loneliness.
+- Feelings fade on their own clocks: wonder passes in an afternoon, fear in half a day, grief over days - and sorrow fades notably faster in company (shared grief softens).
+- Feelings tilt decisions but never override survival: grief drains the will for play and wandering (a grieving AI sits), wonder sharpens the appetite for the new, loneliness and fear pull toward others, contentment settles a body where it is. Eating, sleeping and warmth-seeking are untouched.
+- Fear of fire arrives here, learned rather than built in: fresh fear (a recent burn) widens the flee reflex to two tiles, so the burned keep their distance before it hurts. It fades within hours, so a hearth stays livable.
+- Feeling spreads: an hour spent close passes fear, joy and sorrow a little way between people, upward only - a frightened camp is a real thing.
+- Chronicle: the first grief. `inspect` shows a feelings line ("feels grieving, uneasy").
+- Repeated feelings will harden into personality in step 5c.

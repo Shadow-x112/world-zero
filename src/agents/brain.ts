@@ -11,7 +11,8 @@ import { nearestParent } from "./actions.ts";
 import { SICK_TOXIN, mustCollapse } from "./needs.ts";
 import { buildUrge } from "./building.ts";
 import { bestAttempt } from "./tinker.ts";
-import { burnable, fireDanger, fuelOf, igniteAt, fireAt, personalLight, warmthAt } from "../world/fire.ts";
+import { burnable, fireDanger, flamesNear, fuelOf, igniteAt, fireAt, personalLight, warmthAt } from "../world/fire.ts";
+import { SPOOKED_FEAR, feel } from "./emotions.ts";
 import { sightRadius } from "./senses.ts";
 
 /** How often an awake agent reconsiders, in ticks (world seconds). */
@@ -115,13 +116,29 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
     build = urge * BUILD_WEIGHT * (hoursLeft > 0 && hoursLeft <= 4 ? 1 : 0.4);
   }
 
-  const explore = restless * 0.65 * (light < 0.3 ? 0.25 : 1);
+  let explore = restless * 0.65 * (light < 0.3 ? 0.25 : 1);
 
   const knowsSomeone =
     agent.lastSeenOther !== null || ctx.index.any(agent.x, agent.y, sightRadius(light), agent);
-  const socialize = knowsSomeone ? Math.pow(1 - n.social, 1.2) * 0.75 : 0;
+  let socialize = knowsSomeone ? Math.pow(1 - n.social, 1.2) * 0.75 : 0;
 
-  return { treat, follow, sleep, eat, seekFood, taste, inspect, gather, tinker, build, explore, socialize, idle: 0.08, flee: 0 };
+  // Feelings tilt the appetite for everything beyond staying alive. Grief
+  // drains the will for play and wandering; wonder sharpens the hunger for
+  // the new; loneliness and fear pull toward others; contentment settles;
+  // anger sours company a little. Eating, sleeping and warmth stay untouched:
+  // a grieving body still has to live.
+  const e = agent.emotions;
+  const heavy = 1 - 0.5 * e.sadness;
+  const wonderful = 1 + 0.4 * e.wonder;
+  tinker *= heavy;
+  taste *= wonderful;
+  const inspectTilted = inspect * wonderful;
+  explore = explore * heavy * (1 + 0.25 * e.wonder) * (1 - 0.3 * e.contentment);
+  socialize = socialize * heavy * (1 - 0.3 * e.anger);
+  if (knowsSomeone) socialize += e.loneliness * 0.4 + e.fear * 0.2;
+  const idle = 0.08 + e.sadness * 0.25 + e.contentment * 0.08;
+
+  return { treat, follow, sleep, eat, seekFood, taste, inspect: inspectTilted, gather, tinker, build, explore, socialize, idle, flee: 0 };
 }
 
 /** Updates what the agent remembers about others' whereabouts. */
@@ -172,13 +189,17 @@ export function decide(agent: Agent, ctx: AgentContext): void {
   startAction(agent, ctx, "idle");
 }
 
-/** Reflex: anyone in or beside flames drops everything and runs, even out of sleep. */
+/** Reflex: anyone in or beside flames drops everything and runs, even out of sleep.
+ * Fresh fear widens the berth: one recently burned backs away before it hurts. */
 function fireReflex(agent: Agent, ctx: AgentContext): boolean {
   const world = ctx.world;
   if (world.fireTiles.size === 0) return false;
   if (agent.action?.type === "flee") return true;
-  if (fireDanger(world, agent.tileX, agent.tileY) === null) return false;
+  const danger = fireDanger(world, agent.tileX, agent.tileY) !== null;
+  const spooked = !danger && agent.emotions.fear >= SPOOKED_FEAR && flamesNear(world, agent.tileX, agent.tileY, 2);
+  if (!danger && !spooked) return false;
   agent.asleep = false;
+  if (danger) feel(agent, "fear", 0.4); // the moment itself is terrifying
   startAction(agent, ctx, "flee");
   return agent.action?.type === "flee";
 }

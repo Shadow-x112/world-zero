@@ -99,6 +99,15 @@ export function fireDanger(world: World, x: number, y: number): "in" | "beside" 
   return null;
 }
 
+/** Whether any flame burns within `radius` tiles (square distance). */
+export function flamesNear(world: World, x: number, y: number, radius: number): boolean {
+  if (world.fireTiles.size === 0) return false;
+  for (const f of world.fireTiles.values()) {
+    if (Math.max(Math.abs(f.x - x), Math.abs(f.y - y)) <= radius) return true;
+  }
+  return false;
+}
+
 /** Burns fuel, spreads to what it can reach, bakes the earth, dies out. */
 export class FireSystem implements System {
   readonly name = "fire";

@@ -4,6 +4,7 @@
 import type { World } from "../core/world.ts";
 import { blockOf, type ActionType, type Agent } from "./agent.ts";
 import { RATES } from "./needs.ts";
+import { feel } from "./emotions.ts";
 import { findPath } from "./pathfinding.ts";
 import type { Population } from "./population.ts";
 import { learnAround, type SpatialIndex } from "./senses.ts";
@@ -150,6 +151,7 @@ function arriveAtTile(agent: Agent, ctx: AgentContext): void {
   const learned = learnAround(agent, world);
   if (learned > 0) {
     agent.needs.curiosity = Math.min(1, agent.needs.curiosity + learned * RATES.curiosityPerNewBlock);
+    feel(agent, "wonder", learned * 0.04); // ground never seen before
   }
   // Something someone left lying here: pick it up if it isn't ours-just-dropped,
   // there is room for it, and we don't hold such a thing already.

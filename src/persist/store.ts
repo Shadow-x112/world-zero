@@ -27,7 +27,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 8;
+export const SAVE_FORMAT_VERSION = 9;
 
 interface SavedChunk {
   cx: number;
@@ -171,6 +171,18 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
         lastBirthTick: 0,
         parents: null,
         stats: { ...a.stats, children: 0 },
+      })),
+    },
+  }),
+  // 8 -> 9: emotions. Everyone wakes into the new format even-keeled.
+  8: (data) => ({
+    ...data,
+    format: 9,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({
+        ...a,
+        emotions: { joy: 0, fear: 0, anger: 0, sadness: 0, contentment: 0, loneliness: 0, wonder: 0 },
       })),
     },
   }),
