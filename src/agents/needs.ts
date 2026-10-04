@@ -69,7 +69,7 @@ export const RATES = {
 export const SICK_TOXIN = 0.08;
 
 /** Old age: from this fraction of lifespan, the body's ceiling on health begins to fall. */
-export const OLD_AGE_START = 0.8;
+export const OLD_AGE_START = 0.9;
 /** At the end of its natural lifespan the ceiling reaches zero. */
 export const OLD_AGE_END = 1.0;
 
@@ -161,10 +161,12 @@ export function updateBody(agent: Agent, world: World, ctx: BodyContext): DeathC
 
   let chill = 0;
   if (cold && cal.light < RATES.exposureLightThreshold) {
+    const growth = agent.growth(world.tick);
     chill =
       (1 - Math.min(1, ctx.shelter)) *
       (ctx.hasCompany ? RATES.huddleFactor : 1) *
-      (1 - WARMTH_FULL * Math.min(1, ctx.warmth));
+      (1 - WARMTH_FULL * Math.min(1, ctx.warmth)) *
+      (growth < 1 ? 1 + 0.15 * (1 - growth) : 1); // small bodies lose a little more heat (they sleep in the middle of the pile)
     if (chill > 0) {
       const amount = RATES.exposureDamage * winterSeverity(world.meta.seed, cal.year) * chill * h;
       hurt("exposure", amount);

@@ -22,6 +22,7 @@ const ACTION_WORDS: Record<string, string> = {
   explore: "exploring",
   socialize: "seeking company",
   idle: "idling",
+  follow: "keeping close to family",
 };
 
 const pct = (v: number) => `${Math.round(v * 100)}%`.padStart(4);
@@ -91,6 +92,22 @@ export function agentDetail(agent: Agent, world: World): string {
     lines.push(
       `  building  urge ${pct(buildUrge(agent, world)).trim()} (cold remembered ${agent.coldMemory.toFixed(2)}), ` +
         `${agent.stats.blocksPlaced} loads placed, leans walls ${agent.buildLeaning.wall.toFixed(2)} / roofs ${agent.buildLeaning.roof.toFixed(2)}`,
+    );
+  }
+  const family: string[] = [];
+  if (agent.parents) family.push(`child of ${agent.parents.map((p) => `#${String(p).padStart(2, "0")}`).join(" and ")}`);
+  if (!agent.grown(world.tick)) family.push(`still growing (${Math.round(agent.growth(world.tick) * 100)}%)`);
+  if (agent.mate !== null) family.push(`paired with #${String(agent.mate).padStart(2, "0")}`);
+  if (agent.stats.children > 0) family.push(`${agent.stats.children} children`);
+  if (family.length) lines.push(`  family    ${family.join("; ")}`);
+  const closest = Object.entries(agent.bonds)
+    .map(([id, b]) => ({ id: Number(id), score: b.trust + b.affection, b }))
+    .sort((x, y) => y.score - x.score)
+    .slice(0, 3)
+    .filter((e) => e.score > 0.2);
+  if (closest.length) {
+    lines.push(
+      `  close to  ${closest.map((e) => `#${String(e.id).padStart(2, "0")} (trust ${e.b.trust.toFixed(2)}, affection ${e.b.affection.toFixed(2)})`).join(", ")}`,
     );
   }
   if (agent.toxin >= 0.01) lines.push(`  sick      poison in the body: ${agent.toxin.toFixed(2)} (drains health until it has worked through)`);

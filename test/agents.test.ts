@@ -100,8 +100,8 @@ test("cold-season nights in the open cost health; other seasons don't", () => {
 
 test("old age: health declines near the end of life and ends it", () => {
   assert.equal(healthCeiling(0.5), 1);
-  assert.equal(healthCeiling(0.8), 1);
-  assert.ok(healthCeiling(0.9) > 0 && healthCeiling(0.9) < 1);
+  assert.equal(healthCeiling(0.9), 1);
+  assert.ok(healthCeiling(0.95) > 0 && healthCeiling(0.95) < 1);
   assert.equal(healthCeiling(1), 0);
 
   const world = World.create({ seed: 4 });

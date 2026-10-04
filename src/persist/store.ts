@@ -27,7 +27,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 7;
+export const SAVE_FORMAT_VERSION = 8;
 
 interface SavedChunk {
   cx: number;
@@ -154,6 +154,23 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
         toxinFrom: 0,
         tastes: {},
         stats: { ...a.stats, cooked: 0 },
+      })),
+    },
+  }),
+  // 7 -> 8: bonds and births. Hearts start empty; the founders have no parents.
+  7: (data) => ({
+    ...data,
+    format: 8,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({
+        ...a,
+        bonds: {},
+        mate: null,
+        bondedTick: 0,
+        lastBirthTick: 0,
+        parents: null,
+        stats: { ...a.stats, children: 0 },
       })),
     },
   }),

@@ -4,6 +4,7 @@ import type { ActionType, Agent } from "./agent.ts";
 import { EAT, GATHER, INSPECT, SHELTER_WORTH_REMEMBERING, TASTE, TREAT } from "./foraging.ts";
 import { BUILD, wakeAtNest } from "./building.ts";
 import { TINKER } from "./tinker.ts";
+import { nightBeside } from "./kinship.ts";
 import { shelterAt } from "../building/structures.ts";
 import { WARMTH_FULL, fireDanger, warmthAt } from "../world/fire.ts";
 import {
@@ -21,8 +22,9 @@ import { sightRadius } from "./senses.ts";
 
 export * from "./movement.ts";
 
-/** At nightfall, an AI alone will walk this far to sleep near others. */
-export const GATHER_FOR_NIGHT_RADIUS = 60;
+/** At nightfall, an AI alone will walk this far to sleep near others
+ * (a scattered few can still find each other across a thinned-out village). */
+export const GATHER_FOR_NIGHT_RADIUS = 100;
 
 const sleep: ActionDef = {
   type: "sleep",
@@ -95,6 +97,7 @@ const sleep: ActionDef = {
       y: Math.round(agent.home.y + (agent.tileY - agent.home.y) * pull),
     };
     wakeAtNest(agent, ctx.world);
+    nightBeside(agent, ctx);
     if (agent.nest) agent.home = { x: agent.nest.x, y: agent.nest.y };
   },
 };
@@ -142,6 +145,26 @@ export function nightDestination(agent: Agent, ctx: AgentContext): { x: number; 
     }
   };
   if (agent.nest) consider(agent.nest.x, agent.nest.y, NEST_NIGHT_RADIUS, 0.1, true);
+  // A paired being goes home to its mate for the night.
+  if (agent.mate !== null) {
+    const mate = ctx.population.get(agent.mate);
+    if (mate) {
+      // Home pulls as hard as it is worth: a built refuge draws the pair in;
+      // a bare patch of ground never outpulls the warm pile of everyone else.
+      if (mate.nest) {
+        const worth = 0.15 + 0.35 * Math.min(1, shelterAt(world, mate.nest.x, mate.nest.y));
+        consider(mate.nest.x, mate.nest.y, NEST_NIGHT_RADIUS, worth, true);
+      }
+      if (mate.asleep) consider(mate.tileX, mate.tileY, GATHER_FOR_NIGHT_RADIUS, 0.3, false, true);
+    }
+  }
+  // The young sleep by their family.
+  if (agent.parents && !agent.grown(world.tick)) {
+    for (const id of agent.parents) {
+      const parent = ctx.population.get(id);
+      if (parent?.nest) consider(parent.nest.x, parent.nest.y, NEST_NIGHT_RADIUS, 0.2, true);
+    }
+  }
   for (const s of agent.shelterSpots) if (s.value >= SHELTER_WORTH_REMEMBERING) consider(s.x, s.y, SHELTER_NIGHT_RADIUS, 0, true);
   // Someone already settled for the night: a still point everyone can converge on.
   const sleeper = ctx.index.near(agent.x, agent.y, GATHER_FOR_NIGHT_RADIUS, agent).find((o) => o.agent.asleep);
@@ -187,6 +210,14 @@ function bestBed(agent: Agent, ctx: AgentContext): [number, number] | null {
       let score = shelterAt(world, x, y) + 0.25 * warmthAt(world, x, y) - 0.02 * Math.hypot(ox, oy);
       if (agent.nest && agent.nest.x === x && agent.nest.y === y) score += 0.15;
       else if (owner) score -= 0.05;
+      // The heart picks the spot: sleeping beside someone you hold dear.
+      let dearest = 0;
+      for (const o of ctx.index.near(x, y, 1.6, agent)) {
+        const bond = agent.bondWith(o.agent.id);
+        const warmthFor = bond.affection + (agent.mate === o.agent.id ? 0.4 : 0) + (agent.parents?.includes(o.agent.id) ? 0.3 : 0);
+        if (warmthFor > dearest) dearest = warmthFor;
+      }
+      score += 0.45 * Math.min(1, dearest);
       if (score > bestScore) {
         bestScore = score;
         best = [x, y];
@@ -339,6 +370,41 @@ const socialize: ActionDef = {
   },
 };
 
+/** A child keeps to its family: walk to a parent until close. */
+const follow: ActionDef = {
+  type: "follow",
+  start(agent, ctx) {
+    const parent = nearestParent(agent, ctx);
+    if (!parent) return false;
+    agent.action!.targetId = parent.id;
+    agent.action!.untilTick = ctx.world.tick + 60 * TICKS_PER_MINUTE;
+    return planRoute(agent, ctx, parent.tileX, parent.tileY);
+  },
+  step(agent, ctx) {
+    const action = agent.action!;
+    const parent = ctx.population.get(action.targetId!);
+    if (!parent || ctx.world.tick >= (action.untilTick ?? 0)) return true;
+    const dist = Math.hypot(parent.x - agent.x, parent.y - agent.y);
+    if (dist <= 4) return true;
+    if (followPath(agent, ctx)) {
+      if (!planRoute(agent, ctx, parent.tileX, parent.tileY)) return true;
+    }
+    return false;
+  },
+};
+
+/** The closest living parent, if any. */
+export function nearestParent(agent: Agent, ctx: AgentContext): Agent | null {
+  if (!agent.parents) return null;
+  let best: Agent | null = null;
+  for (const id of agent.parents) {
+    const parent = ctx.population.get(id);
+    if (!parent) continue;
+    if (!best || Math.hypot(parent.x - agent.x, parent.y - agent.y) < Math.hypot(best.x - agent.x, best.y - agent.y)) best = parent;
+  }
+  return best;
+}
+
 /** Picks and routes to the safest open tile a few steps out, away from every nearby flame. */
 function planEscape(agent: Agent, ctx: AgentContext): boolean {
   const world = ctx.world;
@@ -415,6 +481,7 @@ export const ACTIONS: Record<ActionType, ActionDef> = {
   tinker: TINKER,
   build: BUILD,
   flee,
+  follow,
   explore,
   socialize,
   idle,

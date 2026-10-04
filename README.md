@@ -50,7 +50,13 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
      - **Mix: paste and bricks** ✅
      - **Fire: dangerous from day one** ✅
      - **Cooking and medicine** ✅
-5. Learning: specialization, personality, teaching, emergent language
+5. Society and learning
+   - 5a. **Bonds, pairs, births, children** ✅
+   - 5b. Emotions
+   - 5c. Personality
+   - 5d. Skill and teaching
+   - 5e. Emergent language
+   - 5f. Conflict
 6. Server deployment (24/7)
 7. 3D viewer, speed controls, AI inspector, chronicle
 8. Creator panel

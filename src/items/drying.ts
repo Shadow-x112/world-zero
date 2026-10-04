@@ -62,7 +62,7 @@ export class Drying implements System {
         firstBricks(world, `The paste ${agent.label} had worked`);
         const type = world.materials.require(item.yields.material);
         // Take what the arms can hold; the rest goes on the ground at its feet.
-        const free = Math.max(0, carryCapacity(agent) - carriedMass(agent, world));
+        const free = Math.max(0, carryCapacity(agent, world.tick) - carriedMass(agent, world));
         const carried = Math.min(item.yields.units, Math.floor(free / Math.max(0.01, type.props.mass) + 1e-9));
         if (carried > 0) addCarried(agent, item.yields.material, carried);
         const rest = item.yields.units - carried;

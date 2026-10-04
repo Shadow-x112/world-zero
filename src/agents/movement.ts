@@ -31,9 +31,11 @@ export const TICKS_PER_MINUTE = 60;
 /** Walking speed in tiles per world second, before health and tiredness. */
 export const WALK_SPEED = 1.2;
 
-export function walkSpeed(agent: Agent): number {
+export function walkSpeed(agent: Agent, tick: number): number {
   let speed = WALK_SPEED * (0.4 + 0.6 * agent.health);
   if (agent.needs.rest < 0.15) speed *= 0.7;
+  const growth = agent.growth(tick);
+  if (growth < 1) speed *= 0.45 + 0.55 * growth; // small legs
   return speed;
 }
 
@@ -111,7 +113,7 @@ export function nearestWalkable(ctx: AgentContext, x: number, y: number, radius:
  * Returns true when the route is finished (or there is none).
  */
 export function followPath(agent: Agent, ctx: AgentContext): boolean {
-  let budget = walkSpeed(agent);
+  let budget = walkSpeed(agent, ctx.world.tick);
   while (budget > 0 && agent.hasPath()) {
     const tx = agent.path[agent.pathIndex];
     const ty = agent.path[agent.pathIndex + 1];
@@ -155,7 +157,7 @@ function arriveAtTile(agent: Agent, ctx: AgentContext): void {
   if (here.length > 0) {
     for (const g of [...here]) {
       if (agent.recentlyDropped.includes(g.item.id)) continue;
-      if (carriedMass(agent, world) + g.item.props.mass > carryCapacity(agent)) continue;
+      if (carriedMass(agent, world) + g.item.props.mass > carryCapacity(agent, world.tick)) continue;
       const cls = itemClass(g.item);
       if (cls !== "none" && agent.items.some((i) => itemClass(i) === cls)) continue;
       const item = world.groundItems.take(g.x, g.y, g.item.id);

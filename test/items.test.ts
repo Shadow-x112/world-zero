@@ -73,7 +73,7 @@ test("weaving enough fibers makes a carrier that raises what can be hauled", () 
   assert.ok(carryBonus(item) > 0, "it carries");
   assert.equal(itemClass(item), "carry");
   // Net gain: capacity grows by more than the carrier's own weight.
-  assert.ok(carryCapacity(agent) - CARRY_CAPACITY > item.props.mass, "worth its weight");
+  assert.ok(carryCapacity(agent, world.tick) - CARRY_CAPACITY > item.props.mass, "worth its weight");
 });
 
 test("striking stone can raise an edge; failures eat the piece", () => {

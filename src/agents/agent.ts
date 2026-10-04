@@ -34,6 +34,7 @@ export type ActionType =
   | "build"
   | "flee"
   | "treat"
+  | "follow"
   | "explore"
   | "socialize"
   | "idle";
@@ -148,6 +149,16 @@ export interface AgentData {
   tried: Record<string, { n: number; ok: number }>;
   /** Items it set down on purpose lately (so it doesn't pick them right back up). */
   recentlyDropped: number[];
+  /** Feelings toward others it knows, by their id. Capped to the closest few. */
+  bonds: Record<string, Bond>;
+  /** The one it is bonded to (a pair), or null. */
+  mate: number | null;
+  /** When the pair formed. */
+  bondedTick: number;
+  /** When it last brought a child into the world (0 = never). */
+  lastBirthTick: number;
+  /** Who it was born to, or null for the founders. */
+  parents: [number, number] | null;
   /** Poison taken in and not yet worked through; it drains health over hours. */
   toxin: number;
   /** What poisoned it last (a material id; 0 = nothing). More of the same never cures. */
@@ -166,7 +177,17 @@ export interface AgentData {
   /** Shelter felt at the nest on the last waking there (-1 = never). */
   feltShelter: number;
   shelterSpots: ShelterSpot[];
-  stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number };
+  stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number; children: number };
+}
+
+/** One AI's feelings toward another, grown only from lived history. */
+export interface Bond {
+  /** Reliance: they were there, they helped, nothing bad came of them (0-1). */
+  trust: number;
+  /** Warmth: nights side by side, seasons shared (0-1). */
+  affection: number;
+  /** When they were last near each other. */
+  lastNear: number;
 }
 
 export const KNOWN_BLOCK_SIZE = 8;
@@ -180,11 +201,11 @@ export function blockOf(v: number): number {
   return Math.floor(v / KNOWN_BLOCK_SIZE);
 }
 
-/** Average natural lifespan: about 180 world days (1.5 real months at 1x). */
-export const LIFESPAN_MEAN_DAYS = 180;
-export const LIFESPAN_SD_DAYS = 15;
-export const LIFESPAN_MIN_DAYS = 130;
-export const LIFESPAN_MAX_DAYS = 235;
+/** Average natural lifespan: about 200 world days (about 7 weeks of real time at 1x). */
+export const LIFESPAN_MEAN_DAYS = 200;
+export const LIFESPAN_SD_DAYS = 28;
+export const LIFESPAN_MIN_DAYS = 140;
+export const LIFESPAN_MAX_DAYS = 260;
 
 /** Agents are grown at this fraction of their lifespan. */
 export const MATURITY_FRACTION = 0.25;
@@ -214,6 +235,11 @@ export class Agent implements AgentData {
   items!: Item[];
   tried!: Record<string, { n: number; ok: number }>;
   recentlyDropped!: number[];
+  bonds!: Record<string, Bond>;
+  mate!: number | null;
+  bondedTick!: number;
+  lastBirthTick!: number;
+  parents!: [number, number] | null;
   toxin!: number;
   toxinFrom!: number;
   tastes!: Record<string, number>;
@@ -224,7 +250,7 @@ export class Agent implements AgentData {
   placedSinceWake!: BuildLeaning;
   feltShelter!: number;
   shelterSpots!: ShelterSpot[];
-  stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number };
+  stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number; children: number };
 
   /** Fast lookup for `known` (key -> last seen tick); rebuilt from the array on load. */
   private knownMap = new Map<number, number>();
@@ -249,6 +275,20 @@ export class Agent implements AgentData {
   /** 0 at birth, 1 at the end of the natural lifespan. */
   lifeFraction(tick: number): number {
     return this.ageTicks(tick) / this.lifespanTicks;
+  }
+
+  /** 0 newborn to 1 full-grown (at the first quarter of life). */
+  growth(tick: number): number {
+    return Math.min(1, this.lifeFraction(tick) / MATURITY_FRACTION);
+  }
+
+  grown(tick: number): boolean {
+    return this.lifeFraction(tick) >= MATURITY_FRACTION - 1e-6;
+  }
+
+  /** Its feelings toward another (zero history if they never met). */
+  bondWith(id: number): Bond {
+    return this.bonds[id] ?? { trust: 0, affection: 0, lastNear: 0 };
   }
 
   get tileX(): number {

@@ -5,7 +5,9 @@
 
 import type { ActionType, Agent } from "./agent.ts";
 import { ACTIONS, type AgentContext } from "./actions.ts";
-import { GATHER_TARGET, carriedFoodUnits, hasCureOption, hasFoodOption, isFoodTo, survey } from "./foraging.ts";
+import { GATHER_TARGET, carriedFood, carriedFoodUnits, consumeEffect, hasCureOption, hasFoodOption, isFoodTo, survey } from "./foraging.ts";
+import { receivedGift, wouldFeed } from "./kinship.ts";
+import { nearestParent } from "./actions.ts";
 import { SICK_TOXIN, mustCollapse } from "./needs.ts";
 import { buildUrge } from "./building.ts";
 import { bestAttempt } from "./tinker.ts";
@@ -22,7 +24,7 @@ export const NOISE = 0.04;
 export const BUILD_WEIGHT = 0.6;
 
 
-const ORDER: ActionType[] = ["treat", "sleep", "eat", "seekFood", "taste", "inspect", "gather", "tinker", "build", "explore", "socialize", "idle"];
+const ORDER: ActionType[] = ["treat", "follow", "sleep", "eat", "seekFood", "taste", "inspect", "gather", "tinker", "build", "explore", "socialize", "idle"];
 
 export type Scores = Record<ActionType, number>;
 
@@ -92,9 +94,21 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
     }
   }
 
+  // A child stays within reach of its family; too far strays feel it strongly.
+  let follow = 0;
+  const growth = agent.growth(world.tick);
+  if (growth < 0.95 && agent.parents) {
+    const parent = nearestParent(agent, ctx);
+    if (parent) {
+      const dist = Math.hypot(parent.x - agent.x, parent.y - agent.y);
+      if (dist > 12) follow = Math.min(1.2, 0.5 + dist / 40) * (1 - growth * 0.5);
+    }
+  }
+
   // Remembered cold draws it to build around its sleeping place, above all late in the day.
+  // Building is grown-ups' work; small arms can't raise a wall.
   let build = 0;
-  const urge = buildUrge(agent, world);
+  const urge = growth >= 0.9 ? buildUrge(agent, world) : 0;
   if (urge > 0.05 && light >= 0.35 && n.energy > 0.35 && n.rest > 0.2) {
     const cal = world.calendar;
     const hoursLeft = cal.sunsetHour - (cal.hour + cal.minute / 60);
@@ -107,7 +121,7 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
     agent.lastSeenOther !== null || ctx.index.any(agent.x, agent.y, sightRadius(light), agent);
   const socialize = knowsSomeone ? Math.pow(1 - n.social, 1.2) * 0.75 : 0;
 
-  return { treat, sleep, eat, seekFood, taste, inspect, gather, tinker, build, explore, socialize, idle: 0.08, flee: 0 };
+  return { treat, follow, sleep, eat, seekFood, taste, inspect, gather, tinker, build, explore, socialize, idle: 0.08, flee: 0 };
 }
 
 /** Updates what the agent remembers about others' whereabouts. */
@@ -152,6 +166,7 @@ export function decide(agent: Agent, ctx: AgentContext): void {
     if (type === "build" && scores.build <= 0) continue; // only an urge to build leads to building
     if (type === "tinker" && scores.tinker <= 0) continue;
     if (type === "flee") continue; // only the fire reflex starts a flight
+    if (type === "follow" && scores.follow <= 0) continue;
     if (startAction(agent, ctx, type)) return;
   }
   startAction(agent, ctx, "idle");
@@ -168,11 +183,36 @@ function fireReflex(agent: Agent, ctx: AgentContext): boolean {
   return agent.action?.type === "flee";
 }
 
+/** Habit: food goes into the hands of your own when they are hungry and you are not. */
+function feedKin(agent: Agent, ctx: AgentContext): void {
+  const world = ctx.world;
+  if (world.tick % 30 !== 7 || agent.needs.energy <= 0.55) return;
+  const food = carriedFood(agent, world);
+  if (!food) return;
+  for (const { agent: other } of ctx.index.near(agent.x, agent.y, 2, agent)) {
+    if (other.needs.energy >= 0.35 || !wouldFeed(agent, other)) continue;
+    const type = world.materials.require(food.material);
+    food.units--;
+    if (food.units <= 0) agent.carrying = agent.carrying.filter((c) => c !== food);
+    consumeEffect(other, world, type);
+    other.stats.meals++;
+    receivedGift(other, agent, world.tick);
+    if (world.isFirst("gift")) {
+      world.chronicle.add(world.tick, "bond", `${agent.label} put food into ${other.label}'s hands: the first gift.`, {
+        from: agent.id,
+        to: other.id,
+      });
+    }
+    return;
+  }
+}
+
 /** Habit: a fire burning low within reach gets a stick thrown on, more generously toward night. */
 function tendNearbyFire(agent: Agent, ctx: AgentContext): void {
   const world = ctx.world;
   if (world.fireTiles.size === 0 || world.tick % 30 !== 0) return;
-  const keepStocked = world.calendar.light < 0.5 ? 120 : 30; // tenths of an hour
+  // Toward night, stock the fire to last the whole of it (a cold-season night runs long).
+  const keepStocked = world.calendar.light < 0.6 ? 170 : 30; // tenths of an hour
   let best: { x: number; y: number } | null = null;
   let bestD = Infinity;
   for (const f of world.fireTiles.values()) {
@@ -211,7 +251,10 @@ export function act(agent: Agent, ctx: AgentContext): void {
     }
     return;
   }
-  if (!agent.asleep) tendNearbyFire(agent, ctx);
+  if (!agent.asleep) {
+    tendNearbyFire(agent, ctx);
+    feedKin(agent, ctx);
+  }
   if (agent.asleep) {
     // Sleepers don't reconsider; they wake when sleep says so.
     if (ACTIONS.sleep.step(agent, ctx)) {

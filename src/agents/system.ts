@@ -11,6 +11,7 @@ import { SpatialIndex, learnAround } from "./senses.ts";
 import { shelterAt } from "../building/structures.ts";
 import { dropEverything } from "./foraging.ts";
 import { fireDanger, warmthAt } from "../world/fire.ts";
+import { dailyKinship, hourTogether } from "./kinship.ts";
 
 /** Days after which unseen ground fades from an AI's memory of the world. */
 export const KNOWN_FADE_DAYS = 12;
@@ -68,6 +69,11 @@ export class AgentSystem implements System {
       }
       act(agent, ctx);
     }
+
+    // Hearts: an hour in company draws people closer; once a day pairs form,
+    // bonds fade, and new lives can begin.
+    if (world.tick % 3600 === 0) hourTogether(ctx);
+    if (world.tick % TICKS_PER_DAY === 12 * 3600) dailyKinship(ctx);
 
     // Bodies fade away after a few days.
     if (population.bodies.length > 0) {

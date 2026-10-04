@@ -152,15 +152,17 @@ export function carriedMass(agent: Agent, world: World): number {
   return mass;
 }
 
-/** What this AI can carry: its arms, plus whatever woven carriers it holds spread. */
-export function carryCapacity(agent: Agent): number {
+/** What this AI can carry: its arms (small ones while growing), plus any woven carriers. */
+export function carryCapacity(agent: Agent, tick: number): number {
   let bonus = 0;
   for (const item of agent.items) bonus += carryBonus(item);
-  return CARRY_CAPACITY + Math.min(1.2, bonus);
+  const growth = agent.growth(tick);
+  const arms = CARRY_CAPACITY * (growth < 1 ? 0.35 + 0.65 * growth : 1);
+  return arms + Math.min(1.2, bonus);
 }
 
 export function roomFor(agent: Agent, world: World, type: MaterialType): number {
-  const free = carryCapacity(agent) - carriedMass(agent, world);
+  const free = carryCapacity(agent, world.tick) - carriedMass(agent, world);
   return Math.max(0, Math.floor(free / Math.max(0.01, type.props.mass) + 1e-9));
 }
 

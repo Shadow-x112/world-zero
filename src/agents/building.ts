@@ -62,15 +62,22 @@ const AROUND: [number, number][] = [
 
 const label = (id: number) => `#${String(id).padStart(2, "0")}`;
 
+/** Days into a pairing after which the two want a proper roof. */
+export const PAIR_NESTING_DAYS = 5;
+
 /**
- * How strongly it wants to build right now (0-1): remembered cold, eased by
- * how sheltered its sleeping place already is (a snug nest needs little more).
+ * How strongly it wants to build right now (0-1): remembered cold - and, cold
+ * or not, a bonded pair wants a roof over its nest for what may come. Either
+ * way the urge eases as the sleeping place grows snug.
  */
 export function buildUrge(agent: Agent, world: World): number {
-  const cold = Math.min(1, agent.coldMemory / COLD_URGE_FULL);
-  if (cold === 0 || !agent.nest) return cold;
+  let want = Math.min(1, agent.coldMemory / COLD_URGE_FULL);
+  if (agent.mate !== null && world.tick - agent.bondedTick > PAIR_NESTING_DAYS * TICKS_PER_DAY) {
+    if (world.population.get(agent.mate)) want = Math.max(want, 0.55);
+  }
+  if (want === 0 || !agent.nest) return want;
   const snug = shelterAt(world, agent.nest.x, agent.nest.y);
-  return cold * Math.min(1, (1 - snug) * 2);
+  return want * Math.min(1, (1 - snug) * 2);
 }
 
 export interface CarriedBuilding {
@@ -125,6 +132,13 @@ export function nestOf(agent: Agent, ctx: AgentContext): Nest | null {
   if (nest && last) {
     const away = Math.hypot(last.x - nest.x, last.y - nest.y);
     if (away > 20 && world.tick - nest.lastSlept > NEST_ABANDON_DAYS * TICKS_PER_DAY) nest = null;
+  }
+  // One of a pair without a place of its own shares its mate's.
+  if (!nest && agent.mate !== null) {
+    const mate = ctx.population.get(agent.mate);
+    if (mate?.nest && world.grid.isWalkable(mate.nest.x, mate.nest.y)) {
+      nest = { x: mate.nest.x, y: mate.nest.y, lastSlept: world.tick };
+    }
   }
   if (!nest && last) {
     // Its last sleeping place, unless that is someone else's; then a free spot beside it.

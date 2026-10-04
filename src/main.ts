@@ -63,7 +63,7 @@ function status(runner: Runner): string {
     formatCalendar(c),
     `light ${Math.round(c.light * 100)}%`,
     `speed ${speed}`,
-    `${pop.count} alive (${asleep} asleep), ${pop.deaths} dead`,
+    `${pop.count} alive (${asleep} asleep), ${pop.births} born, ${pop.deaths} dead`,
     `${w.grid.chunkCount} chunks loaded`,
   ];
   if (c.season === "cold") parts.splice(1, 0, `${describeWinter(winterSeverity(w.meta.seed, c.year))} winter`);
