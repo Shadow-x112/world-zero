@@ -40,9 +40,9 @@ export const RATES = {
   starvationDamage: 1 / 48,
   /** With no rest left, health fails over about 3 days (and the agent collapses asleep). */
   exhaustionDamage: 1 / 72,
-  /** A cold-season night in the open costs health (about 60% of it over a whole night, in an
+  /** A cold-season night in the open costs health (about half of it over a whole night, in an
    * ordinary winter); shelter reduces it in proportion, and each winter's severity scales it. */
-  exposureDamage: 1 / 26,
+  exposureDamage: 1 / 32,
   /** Light below this counts as night for exposure. */
   exposureLightThreshold: 0.3,
   /** Sleeping close to others cuts exposure harm to this fraction. */

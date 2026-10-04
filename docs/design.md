@@ -138,7 +138,7 @@ How the plan above was turned into numbers. All of these are tunable.
 
 ## Implementation notes (winter)
 
-- Nights are harsher than in the first cut: an ordinary cold-season night in the open costs about 60% of an AI's health alone and unsheltered (shelter still cuts it in proportion, huddling halves what's left).
+- Nights are harsher than in the first cut: an ordinary cold-season night in the open costs about half of an AI's health alone and unsheltered (shelter still cuts it in proportion, huddling halves what's left). Eased one notch after step 5a's multi-year runs showed ordinary winters pinning every village small; bitter winters keep their full menace through severity.
 - Bodies burn energy half again as fast in the cold season, so food gathered in autumn matters.
 - Every winter has its own severity, fixed from the world's seed and the year (0.8x for the mildest to 1.4x for the harshest). Most are ordinary, many are mild, about one in eleven is bitter; a bitter night in the open costs more health than a full day can restore even while huddled. The chronicle notes a mild, hard or bitter winter as it sets in, and `status` names the kind of winter while it lasts.
 
