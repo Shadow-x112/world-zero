@@ -19,6 +19,7 @@ import { BRICK_ID, type MaterialType } from "../materials/registry.ts";
 import type { Agent } from "../agents/agent.ts";
 import { breakPower, carryBonus, cutPower, emptyProps, nextItemId, type Item } from "./item.ts";
 import { burnable, fuelOf, igniteAt } from "../world/fire.ts";
+import { practice } from "../agents/skill.ts";
 
 /** Flexibility at or above this can bind. */
 export const BINDER_FLEXIBILITY = 0.6;
@@ -37,8 +38,12 @@ export const STRIKER_HARDNESS = 0.6;
 export const STRIKER_MASS = 0.25;
 /** Only hard things take an edge. */
 export const SHAPEABLE_HARDNESS = 0.5;
-/** Chance that one bout of shaping succeeds. */
+/** Chance that one bout of shaping succeeds, for green hands. */
 export const SHAPE_CHANCE = 0.45;
+/** A practiced hand strikes surer. */
+export function shapeChance(agent: Agent): number {
+  return Math.min(0.85, SHAPE_CHANCE + 0.35 * agent.skills.crafting);
+}
 /** Chance that shaping an existing item ruins it. */
 export const SHAPE_RUIN_CHANCE = 0.2;
 /** What can be mixed: soft, shapeable, chemically lively (the wet earth). */
@@ -50,9 +55,12 @@ export const MIX_EARTH_UNITS = 2;
 export const MIX_YIELD_BRICKS = 2;
 /** World seconds a wet batch takes to dry on its own (fire will hurry it, later). */
 export const DRY_TICKS = 6 * 3600;
-/** Chance that one bout of striking sparks catches the tinder - and once the knack is known. */
+/** Chance that one bout of striking sparks catches the tinder, bare-handed and green. */
 export const HEAT_CHANCE = 0.12;
-export const HEAT_KNACK_CHANCE = 0.4;
+/** Practiced hands raise flame surer (the first success teaches most of the knack). */
+export function heatChance(agent: Agent): number {
+  return Math.min(0.6, HEAT_CHANCE + 0.45 * agent.skills.firecraft);
+}
 /** World seconds one attempt takes. */
 export const TINKER_TICKS = 1500;
 
@@ -242,9 +250,8 @@ export function possibleAttempts(agent: Agent, world: World): Attempt[] {
         verb: "heat",
         consumes: {},
         resolve: (world, agent, rng) => {
-          // Once you have raised flame, you know the knack of it.
-          const knack = Object.entries(agent.tried).some(([k, v]) => k.startsWith("heat:") && v.ok > 0);
-          if (!rng.chance(knack ? HEAT_KNACK_CHANCE : HEAT_CHANCE)) return null;
+          // Practiced hands raise flame surer: the first success IS the knack.
+          if (!rng.chance(heatChance(agent))) return null;
           // Flame needs somewhere to live: the nearest open tile beside it.
           let spot: [number, number] | null = null;
           for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as [number, number][]) {
@@ -278,7 +285,7 @@ export function possibleAttempts(agent: Agent, world: World): Attempt[] {
         verb: "shape",
         consumes: { [target]: 1 },
         resolve: (world, agent, rng) => {
-          if (!rng.chance(SHAPE_CHANCE)) return null; // the piece crumbled
+          if (!rng.chance(shapeChance(agent))) return null; // the piece crumbled
           const type = world.materials.require(target);
           const item = newItem(world, agent, { [target]: 1 });
           const p = item.props;
@@ -297,11 +304,11 @@ export function possibleAttempts(agent: Agent, world: World): Attempt[] {
         consumes: {},
         usesItem: item,
         resolve: (world, agent, rng) => {
-          if (rng.chance(SHAPE_RUIN_CHANCE)) {
+          if (rng.chance(SHAPE_RUIN_CHANCE * (1 - 0.7 * agent.skills.crafting))) {
             agent.items = agent.items.filter((i) => i !== item);
             return null; // it broke in its hands
           }
-          if (!rng.chance(SHAPE_CHANCE)) return null;
+          if (!rng.chance(shapeChance(agent))) return null;
           sharpen(item.props, rng);
           return item;
         },
@@ -355,5 +362,6 @@ export function performAttempt(attempt: Attempt, world: World, agent: Agent): It
     if (result !== true && !agent.items.includes(result)) agent.items.push(result);
     agent.stats.crafted++;
   }
+  practice(agent, attempt.verb === "heat" ? "firecraft" : "crafting", !!result, world);
   return result;
 }

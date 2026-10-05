@@ -206,3 +206,14 @@ How the plan above was turned into numbers. All of these are tunable.
 - Nature tilts decisions a lasting way, on top of the moment's emotions: seekers roam and taste and tinker more, the tireless build and gather more, the warm seek company, the dreamy and the somber sit longer, and the timid are spooked by fire at less fright while the fearless need more. Nature never touches eating, sleeping or warmth: it bends the day, it never starves anyone.
 - The chronicle marks the world's first of each settled nature (past 0.5): "Something has settled in #12: the first of them to grow truly timid." `inspect` shows a nature line.
 - Personality feeds forward: 5d (skill and teaching) will let natures pick teachers and students; 5f (conflict) will lean on temper and warmth.
+
+## Implementation notes (step 5d: skill and teaching)
+
+- Five skills, 0-1 each, invisible to their owners: gathering, crafting, firecraft, building, cooking. Plain data; saved exactly (format 11). No menus, no levels - skill shows only in the work.
+- Hands learn by doing: every attempt teaches (a success more than a failure), with diminishing returns, scaled to how often that work comes - gathering in crumbs, fire in leaps. The first raised flame IS most of the knack (it replaces the old one-time knack flag with a curve: 12% bare-handed up to ~60% in mastered hands). Skill never fades.
+- Effects: gathering and building go faster; shaping succeeds more and ruins fewer tools; tinkering sits shorter; cooked meals char less and nourish a touch more.
+- Specialization emerges on its own: success breeds practice breeds skill, and nature biases who does what.
+- Watching: whoever SEES a craft or fire succeed learns a little (capped at 0.3 - your own hands take you further) and can catch the recipe itself, the tried-combination memory that otherwise dies with its holder. A village that loses its firemaker keeps fire if anyone watched.
+- Teaching: once an hour, an idle grown AI beside someone it holds dear (the same hearts that would feed them) may stop and show them something it knows and they lack - the herb that loosens poison first, then the knack of its best craft (with the recipe), then which things are good to eat. The warm-hearted teach most readily. A lesson lifts the learner to at most 0.5, warms the bond both ways, and the first lesson in the world is history.
+- Chronicle: the first lesson, and the world's first master of each craft. `inspect` shows a skilled line.
+- Deliberately absent: any skill for fighting - that waits for 5f so it lands with anger and rivalry.

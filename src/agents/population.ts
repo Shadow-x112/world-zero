@@ -4,6 +4,7 @@ import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { Rng } from "../core/rng.ts";
 import { blankEmotions } from "./emotions.ts";
 import { blankPersonality } from "./personality.ts";
+import { blankSkills } from "./skill.ts";
 import {
   Agent,
   LIFESPAN_MAX_DAYS,
@@ -119,6 +120,7 @@ export class Population {
       felt: blankEmotions(),
       personality: blankPersonality(quirk),
       prevWork: 0,
+      skills: blankSkills(),
       coldMemory: 0,
       nest: null,
       lastSleep: null,
@@ -177,6 +179,7 @@ export class Population {
       felt: blankEmotions(),
       personality: blankPersonality(quirk),
       prevWork: 0,
+      skills: blankSkills(),
       coldMemory: 0,
       nest: null,
       lastSleep: null,

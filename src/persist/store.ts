@@ -28,7 +28,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 10;
+export const SAVE_FORMAT_VERSION = 11;
 
 interface SavedChunk {
   cx: number;
@@ -199,6 +199,25 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
         felt: { joy: 0, fear: 0, anger: 0, sadness: 0, contentment: 0, loneliness: 0, wonder: 0 },
         personality: blankPersonality(a.quirk),
         prevWork: (a.stats?.blocksPlaced ?? 0) + (a.stats?.crafted ?? 0) + (a.stats?.cooked ?? 0),
+      })),
+    },
+  }),
+  // 10 -> 11: skill. Hands start green, except that anyone who had already
+  // raised flame keeps the knack of it (the old one-time flag, now a skill).
+  10: (data) => ({
+    ...data,
+    format: 11,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({
+        ...a,
+        skills: {
+          gathering: 0,
+          crafting: 0,
+          firecraft: Object.entries(a.tried ?? {}).some(([k, v]: any) => k.startsWith("heat:") && v.ok > 0) ? 0.6 : 0,
+          building: 0,
+          cooking: 0,
+        },
       })),
     },
   }),

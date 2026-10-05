@@ -8,6 +8,7 @@ import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { Item } from "../items/item.ts";
 import type { Emotions } from "./emotions.ts";
 import type { Personality } from "./personality.ts";
+import type { Skills } from "./skill.ts";
 
 export interface Needs {
   /** 1 = well fed, 0 = starving. Restored by eating. */
@@ -175,6 +176,8 @@ export interface AgentData {
   personality: Personality;
   /** Work total at the last personality settling (to measure a day's work). */
   prevWork: number;
+  /** What its hands have learned by doing (0-1 each); never fades, dies with it. */
+  skills: Skills;
   /** Harm remembered from cold nights; fades in warm seasons. Drives the urge to build. */
   coldMemory: number;
   /** Where it sleeps and builds, once it has started building. */
@@ -257,6 +260,7 @@ export class Agent implements AgentData {
   felt!: Emotions;
   personality!: Personality;
   prevWork!: number;
+  skills!: Skills;
   coldMemory!: number;
   nest!: Nest | null;
   lastSleep!: { x: number; y: number } | null;

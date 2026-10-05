@@ -9,6 +9,7 @@ import { buildUrge } from "./agents/building.ts";
 import { describeItem } from "./items/item.ts";
 import { feelingWords } from "./agents/emotions.ts";
 import { natureWords } from "./agents/personality.ts";
+import { skillWords } from "./agents/skill.ts";
 
 const ACTION_WORDS: Record<string, string> = {
   sleep: "going to sleep",
@@ -112,6 +113,8 @@ export function agentDetail(agent: Agent, world: World): string {
       `  close to  ${closest.map((e) => `#${String(e.id).padStart(2, "0")} (trust ${e.b.trust.toFixed(2)}, affection ${e.b.affection.toFixed(2)})`).join(", ")}`,
     );
   }
+  const skilled = skillWords(agent);
+  if (skilled.length) lines.push(`  skilled   ${skilled.join(", ")}`);
   const nature = natureWords(agent);
   if (nature.length) lines.push(`  nature    ${nature.join(", ")}`);
   const feelings = feelingWords(agent);

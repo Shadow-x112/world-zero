@@ -13,6 +13,7 @@ import { buildUrge } from "./building.ts";
 import { bestAttempt } from "./tinker.ts";
 import { burnable, fireDanger, flamesNear, fuelOf, igniteAt, fireAt, personalLight, warmthAt } from "../world/fire.ts";
 import { SPOOKED_FEAR, feel } from "./emotions.ts";
+import { teachNearby } from "./skill.ts";
 import { sightRadius } from "./senses.ts";
 
 /** How often an awake agent reconsiders, in ticks (world seconds). */
@@ -290,6 +291,7 @@ export function act(agent: Agent, ctx: AgentContext): void {
   if (!agent.asleep) {
     tendNearbyFire(agent, ctx);
     feedKin(agent, ctx);
+    teachNearby(agent, ctx);
   }
   if (agent.asleep) {
     // Sleepers don't reconsider; they wake when sleep says so.

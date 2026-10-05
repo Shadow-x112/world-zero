@@ -38,6 +38,7 @@ import {
   toolDidWork,
 } from "./foraging.ts";
 import type { ActionDef, AgentContext } from "./movement.ts";
+import { practice, workSpeed } from "./skill.ts";
 
 /** Remembered cold (health lost) at which the urge to build is at its strongest. */
 export const COLD_URGE_FULL = 0.3;
@@ -293,7 +294,7 @@ export const BUILD: ActionDef = {
       if (placements(agent, ctx, nest, carried.type).length === 0) return false;
       a.phase = "place";
       a.material = carried.material;
-      a.untilTick = world.tick + PLACE_TICKS;
+      a.untilTick = world.tick + Math.round(PLACE_TICKS / workSpeed(agent.skills.building));
       return goTo(agent, ctx, nest);
     }
     if (!source) return false;
@@ -326,6 +327,7 @@ export const BUILD: ActionDef = {
         if (taken) {
           handle(agent, world, taken);
           toolDidWork(agent, world, taken);
+          practice(agent, "gathering", true, world);
           addCarried(agent, taken.id, 1);
           if (unitsCarried(agent, type.id) < unitsPerBlock(type) && roomFor(agent, world, type) > 0) return false;
         }
@@ -333,7 +335,7 @@ export const BUILD: ActionDef = {
       if (unitsCarried(agent, type.id) === 0) return true; // nothing left here
       // Carry it home.
       a.phase = "place";
-      a.untilTick = world.tick + PLACE_TICKS;
+      a.untilTick = world.tick + Math.round(PLACE_TICKS / workSpeed(agent.skills.building));
       return !goTo(agent, ctx, nest);
     }
 
@@ -341,11 +343,11 @@ export const BUILD: ActionDef = {
     const state = approach(agent, ctx);
     if (state === "stuck") return true;
     if (state === "walking") {
-      a.untilTick = world.tick + PLACE_TICKS;
+      a.untilTick = world.tick + Math.round(PLACE_TICKS / workSpeed(agent.skills.building));
       return false;
     }
     if (world.tick < (a.untilTick ?? 0)) return false;
-    a.untilTick = world.tick + PLACE_TICKS;
+    a.untilTick = world.tick + Math.round(PLACE_TICKS / workSpeed(agent.skills.building));
     const type = world.materials.require(a.material!);
     const have = unitsCarried(agent, type.id);
     if (have === 0) return true;
@@ -361,6 +363,7 @@ export const BUILD: ActionDef = {
       dropUnits(agent, type.id, use);
       agent.placedSinceWake[spot.level]++;
       agent.stats.blocksPlaced++;
+      practice(agent, "building", true, world);
       recordFirsts(agent, world, spot, type, nest);
     }
     return unitsCarried(agent, type.id) === 0;

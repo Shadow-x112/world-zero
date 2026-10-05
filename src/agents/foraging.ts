@@ -20,6 +20,7 @@ import {
 } from "../materials/registry.ts";
 import { SICK_TOXIN } from "./needs.ts";
 import { feel } from "./emotions.ts";
+import { practice, workSpeed } from "./skill.ts";
 import { warmthAt } from "../world/fire.ts";
 import type { Agent, Carried, MaterialKnowledge } from "./agent.ts";
 import { followPath, planRoute, type ActionDef, type AgentContext } from "./movement.ts";
@@ -187,7 +188,7 @@ export function bestToolFor(agent: Agent, type: MaterialType): { item: Item; fac
 export function pickupTicks(agent: Agent, world: World, type: MaterialType): number {
   const bare = PICKUP_TICKS * (1 + PICKUP_HARDNESS_FACTOR * type.props.hardness);
   const tool = bestToolFor(agent, type);
-  return Math.max(5, Math.round(bare / (tool ? tool.factor : 1)));
+  return Math.max(5, Math.round(bare / ((tool ? tool.factor : 1) * workSpeed(agent.skills.gathering, 0.6))));
 }
 
 /** After a unit came loose: the tool that helped wears a little, and its help is remembered. */
@@ -494,9 +495,10 @@ function eatOne(agent: Agent, world: World, type: MaterialType): void {
   let cookFactor = 1;
   let charred = false;
   if (atFire && type.props.nourishment > 0) {
-    charred = world.rng.chance(0.15);
-    cookFactor = charred ? 0.7 : 1.35;
+    charred = world.rng.chance(0.15 * (1 - 0.8 * agent.skills.cooking));
+    cookFactor = charred ? 0.7 : 1.35 * (1 + 0.1 * agent.skills.cooking);
     agent.stats.cooked++;
+    practice(agent, "cooking", !charred, world);
     if (!charred && world.isFirst("cookedMeal")) {
       world.chronicle.add(world.tick, "fire", `${agent.label} held its food to the fire and ate it warm: the first cooked meal.`, {
         agentId: agent.id,
@@ -704,6 +706,7 @@ export const GATHER: ActionDef = {
       return true;
     }
     toolDidWork(agent, world, type);
+    practice(agent, "gathering", true, world);
     addCarried(agent, type.id, 1);
     return false;
   },

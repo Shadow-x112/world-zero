@@ -23,6 +23,7 @@ import {
 import type { Agent } from "./agent.ts";
 import { buildUrge } from "./building.ts";
 import { feel } from "./emotions.ts";
+import { practice, watchSuccess, workSpeed } from "./skill.ts";
 import { warmthAt } from "../world/fire.ts";
 import { approach, goTo, handle, pickupTicks, roomFor, survey, takeFromTile } from "./foraging.ts";
 import type { ActionDef, AgentContext } from "./movement.ts";
@@ -95,7 +96,7 @@ export const TINKER: ActionDef = {
     const a = agent.action!;
     if (bestAttempt(agent, ctx)) {
       a.phase = "work";
-      a.untilTick = ctx.world.tick + TINKER_TICKS;
+      a.untilTick = ctx.world.tick + Math.round(TINKER_TICKS / workSpeed(agent.skills.crafting));
       agent.clearPath();
       return true;
     }
@@ -122,6 +123,7 @@ export const TINKER: ActionDef = {
       const taken = takeFromTile(world, a.targetX!, a.targetY!, a.material!);
       if (taken) {
         handle(agent, world, taken);
+        practice(agent, "gathering", true, world);
         const entry = agent.carrying.find((c) => c.material === taken.id);
         if (entry) entry.units++;
         else agent.carrying.push({ material: taken.id, units: 1 });
@@ -131,7 +133,7 @@ export const TINKER: ActionDef = {
         a.phase = "work";
         a.targetX = undefined;
         a.targetY = undefined;
-        a.untilTick = world.tick + TINKER_TICKS;
+        a.untilTick = world.tick + Math.round(TINKER_TICKS / workSpeed(agent.skills.crafting));
         agent.clearPath();
         return false;
       }
@@ -155,11 +157,13 @@ export const TINKER: ActionDef = {
         feel(agent, "wonder", 0.3);
       }
       recordFirsts(agent, ctx, result, best.attempt.verb);
+      // Whoever saw it learns a little - and may catch the recipe itself.
+      watchSuccess(ctx, agent, best.attempt.verb === "heat" ? "firecraft" : "crafting", best.attempt.key);
       return true; // made something: step back and look at it
     }
     // Nothing came of it; maybe try again a while longer.
     feel(agent, "anger", 0.05); // wasted material grates a little
-    a.untilTick = world.tick + TINKER_TICKS;
+    a.untilTick = world.tick + Math.round(TINKER_TICKS / workSpeed(agent.skills.crafting));
     return world.rng.chance(0.5);
   },
 };
