@@ -3,6 +3,7 @@
 import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { Rng } from "../core/rng.ts";
 import { blankEmotions } from "./emotions.ts";
+import { blankPersonality } from "./personality.ts";
 import {
   Agent,
   LIFESPAN_MAX_DAYS,
@@ -80,6 +81,7 @@ export class Population {
   /** A new adult agent, identical to every other founder apart from tiny quirks. */
   createFounder(rng: Rng, tick: number, x: number, y: number): Agent {
     const lifespanTicks = sampleLifespanTicks(rng);
+    const quirk = Array.from({ length: 8 }, () => rng.range(-1, 1));
     const data: AgentData = {
       id: this.nextId++,
       x,
@@ -98,7 +100,7 @@ export class Population {
       pathIndex: 0,
       known: [],
       lastSeenOther: null,
-      quirk: Array.from({ length: 8 }, () => rng.range(-1, 1)),
+      quirk,
       knowledge: {},
       carrying: [],
       foodSpots: [],
@@ -114,6 +116,9 @@ export class Population {
       toxinFrom: 0,
       tastes: {},
       emotions: blankEmotions(),
+      felt: blankEmotions(),
+      personality: blankPersonality(quirk),
+      prevWork: 0,
       coldMemory: 0,
       nest: null,
       lastSleep: null,
@@ -169,6 +174,9 @@ export class Population {
       toxinFrom: 0,
       tastes: {},
       emotions: blankEmotions(),
+      felt: blankEmotions(),
+      personality: blankPersonality(quirk),
+      prevWork: 0,
       coldMemory: 0,
       nest: null,
       lastSleep: null,

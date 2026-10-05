@@ -196,3 +196,13 @@ How the plan above was turned into numbers. All of these are tunable.
 - Feeling spreads: an hour spent close passes fear, joy and sorrow a little way between people, upward only - a frightened camp is a real thing.
 - Chronicle: the first grief. `inspect` shows a feelings line ("feels grieving, uneasy").
 - Repeated feelings will harden into personality in step 5c.
+
+## Implementation notes (step 5c: personality)
+
+- Five traits, -1..1 each: courage (timid-fearless), cheer (somber-sunny), wander (homebound-seeker), industry (dreamy-tireless), warmth (solitary-gregarious). Plain data; saved exactly (format 10).
+- Nothing is assigned. Every day at midnight each trait drifts a small step (3% of the gap) toward what that AI actually felt and did that day: the day's accumulated feelings (a raw `felt` ledger that every feel() call adds to), the work it banked (blocks, crafts, cooking), and how socially full the day left it. A safe day builds a little nerve; a day with real fear in it bends toward caution.
+- A season leaves a mark; a year of consistent life shapes about 70% of a nature. Children drift twice as fast - the early years cut deepest.
+- The founders begin all but identical: quirks seed only a whisper of a leaning (±0.08). Their lives do the rest, so identical AIs diverge into different people purely through what happens to them.
+- Nature tilts decisions a lasting way, on top of the moment's emotions: seekers roam and taste and tinker more, the tireless build and gather more, the warm seek company, the dreamy and the somber sit longer, and the timid are spooked by fire at less fright while the fearless need more. Nature never touches eating, sleeping or warmth: it bends the day, it never starves anyone.
+- The chronicle marks the world's first of each settled nature (past 0.5): "Something has settled in #12: the first of them to grow truly timid." `inspect` shows a nature line.
+- Personality feeds forward: 5d (skill and teaching) will let natures pick teachers and students; 5f (conflict) will lean on temper and warmth.

@@ -22,12 +22,13 @@ import { MaterialRegistry, type RegistryData } from "../materials/registry.ts";
 import { placeMaterials } from "../materials/placement.ts";
 import { Chunk, kindOf, type LayerArray, type LayerKind } from "../world/chunk.ts";
 import { GroundItems, type GroundItem } from "../items/item.ts";
+import { blankPersonality } from "../agents/personality.ts";
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 9;
+export const SAVE_FORMAT_VERSION = 10;
 
 interface SavedChunk {
   cx: number;
@@ -183,6 +184,21 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
       agents: data.population.agents.map((a: any) => ({
         ...a,
         emotions: { joy: 0, fear: 0, anger: 0, sadness: 0, contentment: 0, loneliness: 0, wonder: 0 },
+      })),
+    },
+  }),
+  // 9 -> 10: personality. Natures start from the same whisper of quirk a new
+  // founder would get; the lives already lived will shape them from here.
+  9: (data) => ({
+    ...data,
+    format: 10,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({
+        ...a,
+        felt: { joy: 0, fear: 0, anger: 0, sadness: 0, contentment: 0, loneliness: 0, wonder: 0 },
+        personality: blankPersonality(a.quirk),
+        prevWork: (a.stats?.blocksPlaced ?? 0) + (a.stats?.crafted ?? 0) + (a.stats?.cooked ?? 0),
       })),
     },
   }),

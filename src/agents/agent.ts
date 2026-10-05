@@ -7,6 +7,7 @@
 import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { Item } from "../items/item.ts";
 import type { Emotions } from "./emotions.ts";
+import type { Personality } from "./personality.ts";
 
 export interface Needs {
   /** 1 = well fed, 0 = starving. Restored by eating. */
@@ -168,6 +169,12 @@ export interface AgentData {
   tastes: Record<string, number>;
   /** How it feels right now (0-1 each); stirred by events, fading over hours. */
   emotions: Emotions;
+  /** Everything felt since the day began (raw, uncapped); feeds personality, reset nightly. */
+  felt: Emotions;
+  /** Who it has become (-1..1 each trait); drifts daily toward the life it lives. */
+  personality: Personality;
+  /** Work total at the last personality settling (to measure a day's work). */
+  prevWork: number;
   /** Harm remembered from cold nights; fades in warm seasons. Drives the urge to build. */
   coldMemory: number;
   /** Where it sleeps and builds, once it has started building. */
@@ -247,6 +254,9 @@ export class Agent implements AgentData {
   toxinFrom!: number;
   tastes!: Record<string, number>;
   emotions!: Emotions;
+  felt!: Emotions;
+  personality!: Personality;
+  prevWork!: number;
   coldMemory!: number;
   nest!: Nest | null;
   lastSleep!: { x: number; y: number } | null;

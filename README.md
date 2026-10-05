@@ -53,7 +53,7 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
 5. Society and learning
    - 5a. **Bonds, pairs, births, children** ✅
    - 5b. **Emotions** ✅
-   - 5c. Personality
+   - 5c. **Personality** ✅
    - 5d. Skill and teaching
    - 5e. Emergent language
    - 5f. Conflict

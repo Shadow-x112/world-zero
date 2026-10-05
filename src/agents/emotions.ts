@@ -54,10 +54,11 @@ export function blankEmotions(): Emotions {
   return { joy: 0, fear: 0, anger: 0, sadness: 0, contentment: 0, loneliness: 0, wonder: 0 };
 }
 
-/** Something happened: the feeling rises (and never past full). */
+/** Something happened: the feeling rises (and never past full), and the day remembers it. */
 export function feel(agent: Agent, kind: EmotionKind, amount: number): void {
   const e = agent.emotions;
   e[kind] = Math.min(1, e[kind] + amount);
+  agent.felt[kind] += amount; // raw and uncapped: a day of it all counts toward who they become
 }
 
 /**

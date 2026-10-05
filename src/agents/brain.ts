@@ -136,9 +136,22 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
   explore = explore * heavy * (1 + 0.25 * e.wonder) * (1 - 0.3 * e.contentment);
   socialize = socialize * heavy * (1 - 0.3 * e.anger);
   if (knowsSomeone) socialize += e.loneliness * 0.4 + e.fear * 0.2;
-  const idle = 0.08 + e.sadness * 0.25 + e.contentment * 0.08;
+  let idle = 0.08 + e.sadness * 0.25 + e.contentment * 0.08;
 
-  return { treat, follow, sleep, eat, seekFood, taste, inspect: inspectTilted, gather, tinker, build, explore, socialize, idle, flee: 0 };
+  // And who they have BECOME tilts everything a lasting way: seekers roam and
+  // try things, the tireless work and gather, the warm seek company, the
+  // dreamy and the somber sit longer. Nature bends the day; it never starves anyone.
+  const p = agent.personality;
+  explore *= 1 + 0.4 * p.wander;
+  taste *= 1 + 0.25 * p.wander;
+  const inspectFinal = inspectTilted * (1 + 0.25 * p.wander);
+  tinker *= 1 + 0.2 * p.industry + 0.15 * p.wander;
+  gather *= 1 + 0.3 * p.industry;
+  if (build > 0) build *= 1 + 0.3 * p.industry;
+  socialize *= 1 + 0.4 * p.warmth;
+  idle += Math.max(0, -p.industry) * 0.06 + Math.max(0, -p.cheer) * 0.05;
+
+  return { treat, follow, sleep, eat, seekFood, taste, inspect: inspectFinal, gather, tinker, build, explore, socialize, idle, flee: 0 };
 }
 
 /** Updates what the agent remembers about others' whereabouts. */
@@ -196,7 +209,9 @@ function fireReflex(agent: Agent, ctx: AgentContext): boolean {
   if (world.fireTiles.size === 0) return false;
   if (agent.action?.type === "flee") return true;
   const danger = fireDanger(world, agent.tileX, agent.tileY) !== null;
-  const spooked = !danger && agent.emotions.fear >= SPOOKED_FEAR && flamesNear(world, agent.tileX, agent.tileY, 2);
+  // The timid are spooked by less; the fearless need more fright to back away.
+  const spookPoint = SPOOKED_FEAR + 0.15 * agent.personality.courage;
+  const spooked = !danger && agent.emotions.fear >= spookPoint && flamesNear(world, agent.tileX, agent.tileY, 2);
   if (!danger && !spooked) return false;
   agent.asleep = false;
   if (danger) feel(agent, "fear", 0.4); // the moment itself is terrifying
