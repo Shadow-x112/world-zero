@@ -10,6 +10,7 @@ import { describeItem } from "./items/item.ts";
 import { feelingWords } from "./agents/emotions.ts";
 import { natureWords } from "./agents/personality.ts";
 import { skillWords } from "./agents/skill.ts";
+import { conceptLabel } from "./agents/language.ts";
 
 const ACTION_WORDS: Record<string, string> = {
   sleep: "going to sleep",
@@ -112,6 +113,14 @@ export function agentDetail(agent: Agent, world: World): string {
     lines.push(
       `  close to  ${closest.map((e) => `#${String(e.id).padStart(2, "0")} (trust ${e.b.trust.toFixed(2)}, affection ${e.b.affection.toFixed(2)})`).join(", ")}`,
     );
+  }
+  const wordCount = Object.keys(agent.lexicon).length;
+  if (wordCount > 0) {
+    const sample = Object.entries(agent.lexicon)
+      .sort((a, b) => b[1].n - a[1].n)
+      .slice(0, 3)
+      .map(([concept, lex]) => `"${lex.w}" (${conceptLabel(world, concept)})`);
+    lines.push(`  speaks    ${wordCount} word${wordCount === 1 ? "" : "s"}: ${sample.join(", ")}${wordCount > 3 ? ", ..." : ""}`);
   }
   const skilled = skillWords(agent);
   if (skilled.length) lines.push(`  skilled   ${skilled.join(", ")}`);

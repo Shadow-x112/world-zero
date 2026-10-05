@@ -19,6 +19,7 @@ import { agentDetail, agentLine, itemsReport, materialsTable, sheltersReport } f
 import { countBlocks } from "./building/structures.ts";
 import { describeWinter, winterSeverity } from "./world/weather.ts";
 import { Store } from "./persist/store.ts";
+import { lexiconReport } from "./agents/language.ts";
 
 const AUTOSAVE_SECONDS = 60;
 const BACKUP_SECONDS = 60 * 60;
@@ -31,6 +32,7 @@ const HELP = `Commands:
   materials         every kind of material and its true properties
   shelters          everything built, and where each AI sleeps
   items             every made thing, held or lying in the world
+  words             the village tongue: every word, its meaning and its speakers
   chronicle [n]     the last n important events (default 10)
   pause / resume    stop or restart time
   speed <n>         ${SPEEDS.filter((s) => s > 0).join(", ")}
@@ -227,6 +229,9 @@ async function main(): Promise<void> {
           break;
         case "items":
           console.log(itemsReport(w));
+          break;
+        case "words":
+          console.log(lexiconReport(w));
           break;
         case "pause":
           runner.setSpeed(0);

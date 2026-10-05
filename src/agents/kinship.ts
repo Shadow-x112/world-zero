@@ -12,6 +12,7 @@ import type { AgentContext } from "./movement.ts";
 import { RATES } from "./needs.ts";
 import { learnAround } from "./senses.ts";
 import { feel, shareFeelings } from "./emotions.ts";
+import { coinWords, converse } from "./language.ts";
 
 /** How much one quiet hour together adds. */
 export const HOUR_TOGETHER = 0.002;
@@ -77,11 +78,13 @@ export function hourTogether(ctx: AgentContext): void {
   const tick = ctx.world.tick;
   for (const agent of ctx.population.all()) {
     if (agent.asleep) continue;
+    coinWords(agent, ctx); // now and then, a sound for something lived with
     for (const { agent: other } of ctx.index.near(agent.x, agent.y, RATES.companyRadius, agent)) {
       if (other.id < agent.id || other.asleep) continue; // each pair once
       warm(touch(agent, other, tick), HOUR_TOGETHER);
       warm(touch(other, agent, tick), HOUR_TOGETHER);
       shareFeelings(agent, other); // fear, joy and sorrow pass between people
+      converse(agent, other, ctx); // and words do what words do
     }
   }
 }

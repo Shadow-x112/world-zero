@@ -14,6 +14,7 @@ import { bestAttempt } from "./tinker.ts";
 import { burnable, fireDanger, flamesNear, fuelOf, igniteAt, fireAt, personalLight, warmthAt } from "../world/fire.ts";
 import { SPOOKED_FEAR, feel } from "./emotions.ts";
 import { teachNearby } from "./skill.ts";
+import { shoutDanger } from "./language.ts";
 import { sightRadius } from "./senses.ts";
 
 /** How often an awake agent reconsiders, in ticks (world seconds). */
@@ -217,6 +218,7 @@ function fireReflex(agent: Agent, ctx: AgentContext): boolean {
   agent.asleep = false;
   if (danger) feel(agent, "fear", 0.4); // the moment itself is terrifying
   startAction(agent, ctx, "flee");
+  if (agent.action?.type === "flee" && danger) shoutDanger(agent, ctx); // the scream carries the word
   return agent.action?.type === "flee";
 }
 
