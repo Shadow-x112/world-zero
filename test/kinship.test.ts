@@ -240,3 +240,40 @@ test("bonds, pairs and parentage survive save and load exactly", () => {
   }
   assert.equal(JSON.stringify(copy.population), JSON.stringify(world.population), "and they carry on identically");
 });
+
+test("the pull home: loneliness wins, the empty hearth is left, home moves to the dearest", async () => {
+  const { LONELY_PULL } = await import("../src/agents/kinship.ts");
+  const world = World.create({ seed: 69 });
+  const [far, friend, child] = world.population.list();
+  // A lone AI with a nest far from everyone, and a friend back in the village.
+  far.x = 500;
+  far.y = 500;
+  far.nest = { x: 500, y: 500, lastSlept: world.tick };
+  friend.x = 0;
+  friend.y = 0;
+  friend.nest = { x: 0, y: 0, lastSlept: world.tick };
+  const stale = world.tick; // every bond unrefreshed from the founding
+  world.tick += 10 * TICKS_PER_DAY;
+  world.calendar = getCalendar(world.tick);
+  for (const bond of Object.values(far.bonds)) bond.lastNear = stale;
+  far.bonds[friend.id] = { trust: 0.5, affection: 0.6, lastNear: stale };
+  far.emotions.loneliness = LONELY_PULL + 0.2;
+  // A child in the same plight stays put: children follow their parents instead.
+  const young = world.population.createChild(world.rng, world.tick - TICKS_PER_DAY, 480, 480, friend, child);
+  young.emotions.loneliness = 1;
+  young.nest = { x: 480, y: 480, lastSlept: world.tick };
+  dailyKinship(ctxOf(world));
+  assert.equal(far.nest, null, "the empty hearth is left behind");
+  assert.deepEqual(far.home, { x: 0, y: 0 }, "home is where the dearest lives now");
+  assert.ok(world.chronicle.all().some((e) => /Loneliness won/.test(e.text)));
+  assert.notEqual(young.nest, null, "a child does not strike out on its own");
+  // And someone whose people were near only yesterday feels no such pull.
+  const settled = world.population.list()[3];
+  settled.x = 600;
+  settled.y = 600;
+  settled.nest = { x: 600, y: 600, lastSlept: world.tick };
+  settled.emotions.loneliness = 1;
+  settled.bonds[friend.id] = { trust: 0.5, affection: 0.6, lastNear: world.tick };
+  dailyKinship(ctxOf(world));
+  assert.notEqual(settled.nest, null, "yesterday's company holds the hearth");
+});

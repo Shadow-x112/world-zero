@@ -28,6 +28,13 @@ export const BOND_FADE_AFTER_DAYS = 3;
 /** The most people one heart keeps track of. */
 export const BOND_LIMIT = 24;
 
+/** The pull home: loneliness this deep, with no dear face for this many days,
+ * makes an AI abandon its empty hearth and go back to the others. */
+export const LONELY_PULL = 0.4;
+export const LONELY_APART_DAYS = 4;
+/** No point moving to someone who already lives this close. */
+export const LONELY_NEAR = 15;
+
 /** What a pair takes: mutual warmth and reliance between two grown AIs. */
 export const PAIR_AFFECTION = 0.5;
 export const PAIR_TRUST = 0.45;
@@ -130,6 +137,61 @@ export function dailyKinship(ctx: AgentContext): void {
         bond.affection = Math.max(floor, bond.affection - BOND_FADE_PER_DAY);
         bond.trust = Math.max(floor, bond.trust - BOND_FADE_PER_DAY);
         if (bond.affection === 0 && bond.trust === 0) delete agent.bonds[id];
+      }
+    }
+
+    // The pull home: an empty stretch of days, a heart grown lonely, and the
+    // far hearth loses its hold. It leaves its nest behind and turns toward
+    // the one it loves best among the living - the old rejoin the fire
+    // instead of dying alone at an empty hearth.
+    if (agent.emotions.loneliness >= LONELY_PULL && agent.grown(tick)) {
+      let anyoneNear = false;
+      for (const bond of Object.values(agent.bonds)) {
+        if ((tick - bond.lastNear) / TICKS_PER_DAY <= LONELY_APART_DAYS) {
+          anyoneNear = true;
+          break;
+        }
+      }
+      if (!anyoneNear) {
+        // The one it loves best among the living; failing any bond, whoever is nearest.
+        let dearest: Agent | null = null;
+        let warmest = 0.1;
+        for (const [id, bond] of Object.entries(agent.bonds)) {
+          const other = population.get(Number(id));
+          if (!other) continue;
+          const warmth = bond.affection + bond.trust;
+          if (warmth > warmest || (warmth === warmest && dearest && other.id < dearest.id)) {
+            warmest = warmth;
+            dearest = other;
+          }
+        }
+        if (!dearest) {
+          let nearestD = Infinity;
+          for (const other of population.all()) {
+            if (other.id === agent.id) continue;
+            const d = Math.hypot(other.x - agent.x, other.y - agent.y);
+            if (d < nearestD) {
+              nearestD = d;
+              dearest = other;
+            }
+          }
+        }
+        const there = dearest && (dearest.nest ?? { x: dearest.home.x, y: dearest.home.y });
+        if (dearest && there && Math.hypot(there.x - agent.x, there.y - agent.y) > LONELY_NEAR) {
+          agent.nest = null; // the empty hearth is left behind
+          agent.home = { x: there.x, y: there.y };
+          agent.feltShelter = -1;
+          feel(agent, "sadness", 0.1);
+          feel(agent, "wonder", 0.1); // and something like hope
+          if (world.isFirst("pullHome")) {
+            world.chronicle.add(
+              tick,
+              "bond",
+              `Loneliness won: ${agent.label} left its empty hearth behind and went to find the others.`,
+              { agentId: agent.id, toward: dearest.id },
+            );
+          }
+        }
       }
     }
 

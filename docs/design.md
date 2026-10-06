@@ -235,3 +235,9 @@ How the plan above was turned into numbers. All of these are tunable.
 - Quarrels: once an hour, anger (0.3+) beside resentment (0.2+) within two tiles can flare - both come away angrier, sadder, trusting less, resenting more. The first quarrel is history.
 - Peace is a gift: food put into wronged hands unmakes 70% of a grudge per giving. The same feedKin habit that feeds the hungry can, between the right hearts, end a feud.
 - Everything routes through the existing systems: emotions carry the rage and the shame-adjacent fear, personality's warmth gates both theft and forgiveness-by-feeding, bonds and bestBed carry the social cost, and the naming-game's "harsh sounds" are all the dialogue a quarrel needs.
+
+## Implementation notes (the pull home: cohesion)
+
+- The fix for the one failure shape every long run showed: after the founders' die-off, survivors scattered across the known world, mates slept far apart, births stopped, and aging bands bled out.
+- Loneliness finally moves someone. A grown AI whose loneliness runs past 0.4 with no one from its life near for 4+ days abandons its nest, sets home to where the person it loves best among the living keeps theirs (failing any bond, whoever is nearest), and drifts back - exploration, nights and company all re-center there. The old rejoin the fire instead of dying alone at an empty hearth. Children are exempt: they follow their parents already.
+- Chronicle: "Loneliness won: #12 left its empty hearth behind and went to find the others." No save-format change: it uses only home, nest and the loneliness feeling that already existed.
