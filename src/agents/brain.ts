@@ -5,7 +5,7 @@
 
 import type { ActionType, Agent } from "./agent.ts";
 import { ACTIONS, type AgentContext } from "./actions.ts";
-import { GATHER_TARGET, carriedFood, carriedFoodUnits, consumeEffect, hasCureOption, hasFoodOption, isFoodTo, survey } from "./foraging.ts";
+import { GATHER_TARGET, carriedFood, carriedFoodUnits, consumeEffect, hasCureOption, hasFoodOption, isFoodTo, rememberedFood, survey } from "./foraging.ts";
 import { receivedGift, wouldFeed } from "./kinship.ts";
 import { nearestParent } from "./actions.ts";
 import { SICK_TOXIN, mustCollapse } from "./needs.ts";
@@ -15,6 +15,7 @@ import { burnable, fireDanger, flamesNear, fuelOf, igniteAt, fireAt, personalLig
 import { SPOOKED_FEAR, feel } from "./emotions.ts";
 import { teachNearby } from "./skill.ts";
 import { shoutDanger } from "./language.ts";
+import { TAKE_FAR, TAKE_HUNGER, takeTarget } from "./conflict.ts";
 import { sightRadius } from "./senses.ts";
 
 /** How often an awake agent reconsiders, in ticks (world seconds). */
@@ -27,7 +28,7 @@ export const NOISE = 0.04;
 export const BUILD_WEIGHT = 0.6;
 
 
-const ORDER: ActionType[] = ["treat", "follow", "sleep", "eat", "seekFood", "taste", "inspect", "gather", "tinker", "build", "explore", "socialize", "idle"];
+const ORDER: ActionType[] = ["treat", "follow", "sleep", "eat", "take", "seekFood", "taste", "inspect", "gather", "tinker", "build", "explore", "socialize", "idle"];
 
 export type Scores = Record<ActionType, number>;
 
@@ -51,6 +52,17 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
   // Hungry with food known: eat. Hungry with none known: search, or try something new.
   const eat = canEat ? Math.pow(hunger, 1.2) * 1.6 + starving : 0;
   const seekFood = canEat ? 0 : Math.pow(hunger, 1.5) * 1.3 + starving;
+  // Hunger past shame: nothing in hand, its own nearest meal a long march
+  // away (or nowhere at all), and someone near whose hands are visibly full.
+  // The warm-hearted hold out longer.
+  let take = 0;
+  if (n.energy < TAKE_HUNGER && !carriedFood(agent, world) && takeTarget(agent, ctx)) {
+    const sighted = seen.food ? Math.hypot(seen.food.x - agent.x, seen.food.y - agent.y) : Infinity;
+    const recalled = rememberedFood(agent, world);
+    const ownMeal = Math.min(sighted, recalled ? Math.hypot(recalled.x - agent.x, recalled.y - agent.y) : Infinity);
+    if (ownMeal > TAKE_FAR) take = (0.5 + hunger * 2) * (1 - 0.25 * Math.max(0, agent.personality.warmth));
+  }
+
   // Poison-sick: treat it with what is known to work, or - desperate - put
   // strange and even known-bitter things in the mouth. That is how cures are found.
   const sickness = Math.min(1, agent.toxin / (SICK_TOXIN * 3));
@@ -153,7 +165,7 @@ export function scoreActions(agent: Agent, ctx: AgentContext): Scores {
   socialize *= 1 + 0.4 * p.warmth;
   idle += Math.max(0, -p.industry) * 0.06 + Math.max(0, -p.cheer) * 0.05;
 
-  return { treat, follow, sleep, eat, seekFood, taste, inspect: inspectFinal, gather, tinker, build, explore, socialize, idle, flee: 0 };
+  return { treat, follow, sleep, eat, take, seekFood, taste, inspect: inspectFinal, gather, tinker, build, explore, socialize, idle, flee: 0 };
 }
 
 /** Updates what the agent remembers about others' whereabouts. */
@@ -197,6 +209,7 @@ export function decide(agent: Agent, ctx: AgentContext): void {
     if (type === current) return; // keep doing what it was doing
     if (type === "build" && scores.build <= 0) continue; // only an urge to build leads to building
     if (type === "tinker" && scores.tinker <= 0) continue;
+    if (type === "take" && scores.take <= 0) continue; // taking needs true desperation
     if (type === "flee") continue; // only the fire reflex starts a flight
     if (type === "follow" && scores.follow <= 0) continue;
     if (startAction(agent, ctx, type)) return;

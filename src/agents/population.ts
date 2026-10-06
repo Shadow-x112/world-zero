@@ -122,6 +122,7 @@ export class Population {
       prevWork: 0,
       skills: blankSkills(),
       lexicon: {},
+      grudges: {},
       coldMemory: 0,
       nest: null,
       lastSleep: null,
@@ -129,7 +130,7 @@ export class Population {
       placedSinceWake: { wall: 0, roof: 0 },
       feltShelter: -1,
       shelterSpots: [],
-      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0, crafted: 0, cooked: 0, children: 0 },
+      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0, crafted: 0, cooked: 0, children: 0, taken: 0 },
     };
     const agent = new Agent(data);
     this.add(agent);
@@ -182,6 +183,7 @@ export class Population {
       prevWork: 0,
       skills: blankSkills(),
       lexicon: {},
+      grudges: {},
       coldMemory: 0,
       nest: null,
       lastSleep: null,
@@ -189,7 +191,7 @@ export class Population {
       placedSinceWake: { wall: 0, roof: 0 },
       feltShelter: -1,
       shelterSpots: [],
-      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0, crafted: 0, cooked: 0, children: 0 },
+      stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0, crafted: 0, cooked: 0, children: 0, taken: 0 },
     });
     // Family love is the one bond that begins full, in both directions.
     const love = { trust: 0.75, affection: 0.8, lastNear: tick };

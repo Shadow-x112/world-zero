@@ -11,6 +11,7 @@ import { feelingWords } from "./agents/emotions.ts";
 import { natureWords } from "./agents/personality.ts";
 import { skillWords } from "./agents/skill.ts";
 import { conceptLabel } from "./agents/language.ts";
+import { resentments } from "./agents/conflict.ts";
 
 const ACTION_WORDS: Record<string, string> = {
   sleep: "going to sleep",
@@ -23,6 +24,7 @@ const ACTION_WORDS: Record<string, string> = {
   tinker: "trying things together",
   build: "building",
   flee: "fleeing the fire",
+  take: "taking what another holds",
   explore: "exploring",
   socialize: "seeking company",
   idle: "idling",
@@ -113,6 +115,10 @@ export function agentDetail(agent: Agent, world: World): string {
     lines.push(
       `  close to  ${closest.map((e) => `#${String(e.id).padStart(2, "0")} (trust ${e.b.trust.toFixed(2)}, affection ${e.b.affection.toFixed(2)})`).join(", ")}`,
     );
+  }
+  const held = resentments(agent).slice(0, 3);
+  if (held.length) {
+    lines.push(`  resents   ${held.map((e) => `#${String(e.id).padStart(2, "0")} (${e.grudge.toFixed(2)})`).join(", ")}`);
   }
   const wordCount = Object.keys(agent.lexicon).length;
   if (wordCount > 0) {

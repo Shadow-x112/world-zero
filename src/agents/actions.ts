@@ -19,6 +19,7 @@ import {
 import { RATES } from "./needs.ts";
 import type { World } from "../core/world.ts";
 import { sightRadius } from "./senses.ts";
+import { TAKE, coldBetween } from "./conflict.ts";
 
 export * from "./movement.ts";
 
@@ -210,9 +211,11 @@ function bestBed(agent: Agent, ctx: AgentContext): [number, number] | null {
       let score = shelterAt(world, x, y) + 0.25 * warmthAt(world, x, y) - 0.02 * Math.hypot(ox, oy);
       if (agent.nest && agent.nest.x === x && agent.nest.y === y) score += 0.15;
       else if (owner) score -= 0.05;
-      // The heart picks the spot: sleeping beside someone you hold dear.
+      // The heart picks the spot: sleeping beside someone you hold dear -
+      // and never, if it can help it, beside someone resentment runs with.
       let dearest = 0;
       for (const o of ctx.index.near(x, y, 1.6, agent)) {
+        if (coldBetween(agent, o.agent)) score -= 0.3;
         const bond = agent.bondWith(o.agent.id);
         const warmthFor = bond.affection + (agent.mate === o.agent.id ? 0.4 : 0) + (agent.parents?.includes(o.agent.id) ? 0.3 : 0);
         if (warmthFor > dearest) dearest = warmthFor;
@@ -474,6 +477,7 @@ export const ACTIONS: Record<ActionType, ActionDef> = {
   sleep,
   eat: EAT,
   treat: TREAT,
+  take: TAKE,
   seekFood,
   taste: TASTE,
   inspect: INSPECT,

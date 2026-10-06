@@ -28,7 +28,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 12;
+export const SAVE_FORMAT_VERSION = 13;
 
 interface SavedChunk {
   cx: number;
@@ -228,6 +228,19 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
     population: data.population && {
       ...data.population,
       agents: data.population.agents.map((a: any) => ({ ...a, lexicon: {} })),
+    },
+  }),
+  // 12 -> 13: conflict. No one holds a grudge yet; no one has taken anything.
+  12: (data) => ({
+    ...data,
+    format: 13,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({
+        ...a,
+        grudges: {},
+        stats: { ...a.stats, taken: 0 },
+      })),
     },
   }),
 };

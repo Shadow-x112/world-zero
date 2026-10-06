@@ -15,6 +15,7 @@ import { dailyKinship, hourTogether } from "./kinship.ts";
 import { grieveFor } from "./emotions.ts";
 import { dailyPersonality } from "./personality.ts";
 import { noticeWorldName } from "./language.ts";
+import { dailyGrudges, quarrels } from "./conflict.ts";
 
 /** Days after which unseen ground fades from an AI's memory of the world. */
 export const KNOWN_FADE_DAYS = 12;
@@ -76,10 +77,12 @@ export class AgentSystem implements System {
     // Hearts: an hour in company draws people closer; once a day pairs form,
     // bonds fade, and new lives can begin.
     if (world.tick % 3600 === 0) hourTogether(ctx);
+    if (world.tick % 3600 === 1200) quarrels(ctx); // anger beside resentment flares
     if (world.tick % TICKS_PER_DAY === 12 * 3600) dailyKinship(ctx);
     // At each midnight, the day's feelings and work settle a little deeper into who each one is.
     if (world.tick % TICKS_PER_DAY === 0) {
       dailyPersonality(ctx);
+      dailyGrudges(ctx); // resentment heals slowly
       noticeWorldName(world); // has the world come to carry a name?
     }
 

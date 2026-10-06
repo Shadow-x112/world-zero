@@ -13,6 +13,7 @@ import { RATES } from "./needs.ts";
 import { learnAround } from "./senses.ts";
 import { feel, shareFeelings } from "./emotions.ts";
 import { coinWords, converse } from "./language.ts";
+import { coldBetween, giftForgives } from "./conflict.ts";
 
 /** How much one quiet hour together adds. */
 export const HOUR_TOGETHER = 0.002;
@@ -81,9 +82,10 @@ export function hourTogether(ctx: AgentContext): void {
     coinWords(agent, ctx); // now and then, a sound for something lived with
     for (const { agent: other } of ctx.index.near(agent.x, agent.y, RATES.companyRadius, agent)) {
       if (other.id < agent.id || other.asleep) continue; // each pair once
+      shareFeelings(agent, other); // fear, joy and sorrow pass even between rivals
+      if (coldBetween(agent, other)) continue; // but resentment lets nothing else grow
       warm(touch(agent, other, tick), HOUR_TOGETHER);
       warm(touch(other, agent, tick), HOUR_TOGETHER);
-      shareFeelings(agent, other); // fear, joy and sorrow pass between people
       converse(agent, other, ctx); // and words do what words do
     }
   }
@@ -106,6 +108,7 @@ export function receivedGift(receiver: Agent, giver: Agent, tick: number): void 
   bond.trust = Math.min(1, bond.trust + GIFT_TRUST);
   bond.affection = Math.min(1, bond.affection + GIFT_TRUST * 0.5);
   touch(giver, receiver, tick);
+  giftForgives(receiver, giver.id); // food into wronged hands unmakes most of a grudge
   feel(receiver, "joy", 0.15);
   feel(receiver, "contentment", 0.15);
   feel(giver, "contentment", 0.1); // giving feels good too

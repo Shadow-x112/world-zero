@@ -38,6 +38,7 @@ export type ActionType =
   | "build"
   | "flee"
   | "treat"
+  | "take"
   | "follow"
   | "explore"
   | "socialize"
@@ -181,6 +182,8 @@ export interface AgentData {
   skills: Skills;
   /** Its words: concept key -> the sound it uses and how settled it is. */
   lexicon: Record<string, Lexeme>;
+  /** Resentments held against others, by id (0-1): quick to form, slow to heal. */
+  grudges: Record<string, number>;
   /** Harm remembered from cold nights; fades in warm seasons. Drives the urge to build. */
   coldMemory: number;
   /** Where it sleeps and builds, once it has started building. */
@@ -193,7 +196,7 @@ export interface AgentData {
   /** Shelter felt at the nest on the last waking there (-1 = never). */
   feltShelter: number;
   shelterSpots: ShelterSpot[];
-  stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number; children: number };
+  stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number; children: number; taken: number };
 }
 
 /** One AI's feelings toward another, grown only from lived history. */
@@ -265,6 +268,7 @@ export class Agent implements AgentData {
   prevWork!: number;
   skills!: Skills;
   lexicon!: Record<string, Lexeme>;
+  grudges!: Record<string, number>;
   coldMemory!: number;
   nest!: Nest | null;
   lastSleep!: { x: number; y: number } | null;
@@ -272,7 +276,7 @@ export class Agent implements AgentData {
   placedSinceWake!: BuildLeaning;
   feltShelter!: number;
   shelterSpots!: ShelterSpot[];
-  stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number; children: number };
+  stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number; children: number; taken: number };
 
   /** Fast lookup for `known` (key -> last seen tick); rebuilt from the array on load. */
   private knownMap = new Map<number, number>();

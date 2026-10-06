@@ -226,3 +226,12 @@ How the plan above was turned into numbers. All of these are tunable.
 - The world's name: when 60% of living mouths use one word for everything there is, the chronicle marks it once - "The world has a name: ..." - and `worldName()` exposes the current majority word (the name can still drift over generations). This is the name the project itself has been waiting for.
 - Chronicle: the first word, the first shared word, the first word for the world, the world named. `words` command prints the village tongue; `inspect` shows what one AI speaks.
 - v1 keeps meaning grounded: words attach to concepts the system already has. Compositional talk (warnings about PLACES, asking for things) can come later, on this base.
+
+## Implementation notes (step 5f: conflict)
+
+- Scarcity given teeth - and nothing more, in v1: no weapons, no injuries, no killing. Save format 13.
+- Taking: a starving AI (energy under 0.3, nothing to eat, no food in sight) beside someone whose hands are visibly full may pull food from them (2 units) - never from a mate, family, or anyone truly loved, and the warm-hearted hold out longer before stooping to it. The taker's hands shake a little (fear); the chronicle keeps the world's first taking.
+- Grudges: the bond's dark mirror. Being robbed collapses trust, drops affection, and leaves a 0.5 grudge; witnesses trust the taker less, and family of the victim pick up grudges of their own. Grudges are quick to form and slow to heal (~0.008/day - a season and more), die with the dead, and go COLD past 0.3: no warmth grows in shared hours, no conversation passes, and beds beside a rival are shunned. Feelings still spread even between rivals - fear doesn't care who you like.
+- Quarrels: once an hour, anger (0.3+) beside resentment (0.2+) within two tiles can flare - both come away angrier, sadder, trusting less, resenting more. The first quarrel is history.
+- Peace is a gift: food put into wronged hands unmakes 70% of a grudge per giving. The same feedKin habit that feeds the hungry can, between the right hearts, end a feud.
+- Everything routes through the existing systems: emotions carry the rage and the shame-adjacent fear, personality's warmth gates both theft and forgiveness-by-feeding, bonds and bestBed carry the social cost, and the naming-game's "harsh sounds" are all the dialogue a quarrel needs.

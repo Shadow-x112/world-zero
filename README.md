@@ -56,7 +56,7 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
    - 5c. **Personality** ✅
    - 5d. **Skill and teaching** ✅
    - 5e. **Emergent language** ✅
-   - 5f. Conflict
+   - 5f. **Conflict** ✅
 6. Server deployment (24/7)
 7. 3D viewer, speed controls, AI inspector, chronicle
 8. Creator panel
