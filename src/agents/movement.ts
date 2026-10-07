@@ -54,6 +54,59 @@ export function planRoute(agent: Agent, ctx: AgentContext, tx: number, ty: numbe
   const dx = tx - agent.x;
   const dy = ty - agent.y;
   const dist = Math.hypot(dx, dy);
+  const straight = planLeg(agent, ctx, tx, ty);
+  if (dist <= MAX_LEG) return straight;
+  if (straight && lastLegComplete) return true; // the straight way is open
+  // The straight way is blocked (a ridge, water, walls) or only leads to the
+  // closest point of a dead end: go around, keeping to one side, before settling for less.
+  const fallback = straight ? { path: agent.path, pathIndex: agent.pathIndex } : null;
+  const base = Math.atan2(dy, dx);
+  // Follow the obstacle: keep going the way it already walks (bending a little at
+  // a time) as long as that isn't turning its back on the goal; only then try
+  // fresh angles off the straight line, wider each time.
+  const directions: number[] = [];
+  for (const bend of FOLLOW_BENDS) {
+    const a = agent.heading + bend;
+    if (angleGap(a, base) <= FOLLOW_MAX_FROM_GOAL) directions.push(a);
+  }
+  for (const turn of DETOUR_TURNS) directions.push(base + turn);
+  for (const a of directions) {
+    for (const len of [MAX_LEG, MAX_LEG * 0.6]) {
+      const lx = Math.round(agent.x + Math.cos(a) * len);
+      const ly = Math.round(agent.y + Math.sin(a) * len);
+      if (planLeg(agent, ctx, lx, ly) && lastLegComplete) return true;
+    }
+  }
+  if (fallback) {
+    agent.path = fallback.path;
+    agent.pathIndex = fallback.pathIndex;
+    return true;
+  }
+  agent.clearPath();
+  return false;
+}
+
+/** Whether the most recent leg reached its target (rather than the closest reachable point). */
+let lastLegComplete = false;
+
+/** The unsigned difference between two directions, 0..pi. */
+function angleGap(a: number, b: number): number {
+  const d = Math.abs(a - b) % (Math.PI * 2);
+  return d > Math.PI ? Math.PI * 2 - d : d;
+}
+
+/** Bends (radians) off its current heading tried first when following an obstacle. */
+const FOLLOW_BENDS = [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2];
+/** Following an obstacle never turns more than this far from the goal's direction. */
+const FOLLOW_MAX_FROM_GOAL = 2.6;
+/** Fresh angles (radians) off the straight line, tried after following fails. */
+const DETOUR_TURNS = [0.5, -0.5, 1.0, -1.0, 1.5, -1.5, 2.0, -2.0];
+
+/** One leg toward a tile (the far part of a long trip is left for later legs). */
+function planLeg(agent: Agent, ctx: AgentContext, tx: number, ty: number): boolean {
+  const dx = tx - agent.x;
+  const dy = ty - agent.y;
+  const dist = Math.hypot(dx, dy);
   if (dist > MAX_LEG) {
     // Aim for the farthest walkable point along the way, up to one leg out.
     const grid = ctx.world.grid;
@@ -84,9 +137,11 @@ export function planRoute(agent: Agent, ctx: AgentContext, tx: number, ty: numbe
   }
   const result = findPath(ctx.world.grid, agent.tileX, agent.tileY, tx, ty, LEG_SEARCH_NODES);
   if (!result) {
+    lastLegComplete = false;
     agent.clearPath();
     return false;
   }
+  lastLegComplete = result.complete;
   agent.path = result.path;
   agent.pathIndex = 0;
   return true;
@@ -171,6 +226,11 @@ function arriveAtTile(agent: Agent, ctx: AgentContext): void {
   }
 }
 
+/** In the last hours before sunset, a paired AI's wandering bends back toward home. */
+export const HOMEWARD_EVENING_HOURS = 3;
+/** Appeal lost per tile a late-day target lies farther from home than where it stands. */
+export const HOMEWARD_EVENING_PENALTY = 0.3;
+
 /** Tiles from home that cost one "unknown block" of appeal when choosing where to explore. */
 export const HOME_RANGE = 40;
 
@@ -197,6 +257,10 @@ function sampleFrontier(
   const grid = ctx.world.grid;
   // A restless mind tolerates straying farther from home.
   const range = HOME_RANGE * (1 + 2 * (1 - agent.needs.curiosity));
+  const cal = ctx.world.calendar;
+  const hoursLeft = cal.sunsetHour - (cal.hour + cal.minute / 60);
+  const homeward = agent.mate !== null && hoursLeft <= HOMEWARD_EVENING_HOURS;
+  const hereFromHome = Math.hypot(agent.x - agent.home.x, agent.y - agent.home.y);
   let best: { target: [number, number]; score: number; unknown: number } | null = null;
   for (let i = 0; i < 12; i++) {
     // Mostly keep going roughly the way it is facing, sometimes turn anywhere.
@@ -212,7 +276,10 @@ function sampleFrontier(
     // Prefer unknown ground, but the farther from home, the less appealing:
     // the explored area grows outward gradually instead of scattering everyone.
     const fromHome = Math.hypot(x - agent.home.x, y - agent.home.y);
-    const score = unknown - fromHome / range + agent.quirk[0] * 0.5 + rng.next() * 0.5;
+    let score = unknown - fromHome / range + agent.quirk[0] * 0.5 + rng.next() * 0.5;
+    // Late in the day a paired AI works its way back: ground farther from home than
+    // it already is loses its pull, so dusk finds it near its own and its mate's home.
+    if (homeward) score -= Math.max(0, fromHome - hereFromHome) * HOMEWARD_EVENING_PENALTY;
     if (!best || score > best.score) best = { target: [x, y], score, unknown };
   }
   return best;

@@ -40,6 +40,7 @@ const sleep: ActionDef = {
       const dest = nightDestination(agent, ctx);
       let target: { x: number; y: number } | null = dest;
       action.toShelter = dest?.shelter ?? false;
+      action.targetId = dest?.besideId;
       if (!dest && !ctx.index.any(agent.x, agent.y, RATES.companyRadius, agent)) {
         // Alone with nowhere better known: head home, where the others are likely to gather too.
         const fromHome = Math.hypot(agent.home.x - agent.x, agent.home.y - agent.y);
@@ -66,7 +67,12 @@ const sleep: ActionDef = {
       }
       // Still walking to shelter or company.
       const dist = Math.hypot(action.targetX! - agent.x, action.targetY! - agent.y);
-      const arrived = action.toShelter ? dist <= ARRIVED : ctx.index.any(agent.x, agent.y, 2, agent);
+      const beside = action.targetId !== undefined ? ctx.population.get(action.targetId) : undefined;
+      const arrived = action.toShelter
+        ? dist <= ARRIVED
+        : beside
+          ? Math.hypot(beside.x - agent.x, beside.y - agent.y) <= 2 // beside the one it walked to, not just anyone
+          : ctx.index.any(agent.x, agent.y, 2, agent);
       if (arrived || tick >= (action.untilTick ?? 0) || agent.needs.rest <= 0.05) {
         agent.clearPath();
         settle(agent, ctx);
@@ -127,8 +133,12 @@ function warmth(world: World, x: number, y: number, shelter: number, company: bo
 export const HOME_SHELTERED = 0.4;
 /** A mate already asleep draws its partner to lie down beside it, wherever it lies. */
 export const MATE_ASLEEP_PULL = 0.9;
+/** How far a pair will walk at dusk to their shared home or each other (tiles; ~8 minutes). */
+export const HOMEWARD_RADIUS = 600;
+/** Distance home counts this fraction as much as distance anywhere else. */
+export const HOMEWARD_DIST_WEIGHT = 1 / 3;
 
-export function nightDestination(agent: Agent, ctx: AgentContext): { x: number; y: number; shelter: boolean } | null {
+export function nightDestination(agent: Agent, ctx: AgentContext): { x: number; y: number; shelter: boolean; besideId?: number } | null {
   const world = ctx.world;
   const grid = world.grid;
   const othersNear = (x: number, y: number) => {
@@ -139,15 +149,15 @@ export function nightDestination(agent: Agent, ctx: AgentContext): { x: number; 
     return false;
   };
   const hereWarmth = warmth(world, agent.tileX, agent.tileY, shelterAt(world, agent.tileX, agent.tileY), ctx.index.any(agent.x, agent.y, RATES.companyRadius, agent));
-  let best: { x: number; y: number; shelter: boolean } | null = null;
+  let best: { x: number; y: number; shelter: boolean; besideId?: number } | null = null;
   let bestScore = hereWarmth + 0.05;
-  const consider = (x: number, y: number, radius: number, bonus: number, shelter: boolean, company?: boolean) => {
+  const consider = (x: number, y: number, radius: number, bonus: number, shelter: boolean, company?: boolean, distWeight = 1, besideId?: number) => {
     const dist = Math.hypot(x - agent.x, y - agent.y);
     if (dist > radius || !grid.isWalkable(x, y)) return;
-    const score = warmth(world, x, y, shelterAt(world, x, y), company ?? othersNear(x, y)) + bonus - dist / 300;
+    const score = warmth(world, x, y, shelterAt(world, x, y), company ?? othersNear(x, y)) + bonus - (dist / 300) * distWeight;
     if (score > bestScore) {
       bestScore = score;
-      best = { x, y, shelter };
+      best = { x, y, shelter, besideId };
     }
   };
   if (agent.nest) consider(agent.nest.x, agent.nest.y, NEST_NIGHT_RADIUS, 0.1, true);
@@ -160,10 +170,11 @@ export function nightDestination(agent: Agent, ctx: AgentContext): { x: number; 
       if (mate.nest) {
         const homeShelter = Math.min(1, shelterAt(world, mate.nest.x, mate.nest.y));
         const worth = homeShelter >= HOME_SHELTERED ? 0.6 + 0.2 * homeShelter : 0.15 + 0.35 * homeShelter;
-        consider(mate.nest.x, mate.nest.y, NEST_NIGHT_RADIUS, worth, true);
+        // Home is worth the walk: the way back to a shared home weighs a third as much.
+        consider(mate.nest.x, mate.nest.y, HOMEWARD_RADIUS, worth, true, undefined, HOMEWARD_DIST_WEIGHT);
       }
-      // Wherever a mate has already lain down, that is where the night is spent.
-      if (mate.asleep) consider(mate.tileX, mate.tileY, GATHER_FOR_NIGHT_RADIUS, MATE_ASLEEP_PULL, false, true);
+      // Wherever a mate has already lain down, that is where the night is spent - however far.
+      if (mate.asleep) consider(mate.tileX, mate.tileY, HOMEWARD_RADIUS, MATE_ASLEEP_PULL, false, true, HOMEWARD_DIST_WEIGHT, mate.id);
     }
   }
   // The young sleep by their family.
