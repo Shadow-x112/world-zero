@@ -2,7 +2,7 @@
   "name": "world-zero",
   "version": "0.1.0",
   "private": true,
-  "description": "A persistent 3D world where 20 AIs build a city on their own",
+  "description": "A persistent 3D world where 50 AIs build a world on their own",
   "type": "module",
   "engines": {
     "node": ">=22.18"
