@@ -11,7 +11,6 @@ import {
   LIFESPAN_MEAN_DAYS,
   LIFESPAN_MIN_DAYS,
   LIFESPAN_SD_DAYS,
-  MATURITY_FRACTION,
   type AgentData,
   type DeathCause,
 } from "./agent.ts";
@@ -31,6 +30,25 @@ export interface Body {
 export const BODY_DAYS = 3;
 
 export const FOUNDER_COUNT = 50;
+
+/**
+ * The founders are a band, not a batch: they open their eyes at different
+ * points in their lives, from the youngest (still growing, but grown before
+ * the first winter) to settled adults. Their place in life is drawn between
+ * these fractions of a lifespan, skewed toward the young by FOUNDER_AGE_SKEW
+ * (1 = even spread). Same-age founders all died within two years of each
+ * other and the birth engine could never cover the gap; a mixed band dies
+ * across many years, and its youngest still breed while the next generation
+ * grows up.
+ */
+export const FOUNDER_YOUNGEST = 0.06;
+export const FOUNDER_OLDEST = 0.4;
+export const FOUNDER_AGE_SKEW = 1.6;
+
+/** Where in its life one founder stands on the first day (a fraction of its lifespan). */
+export function founderLifeFraction(rng: Rng): number {
+  return FOUNDER_YOUNGEST + (FOUNDER_OLDEST - FOUNDER_YOUNGEST) * Math.pow(rng.next(), FOUNDER_AGE_SKEW);
+}
 
 export interface PopulationData {
   nextId: number;
@@ -79,9 +97,10 @@ export class Population {
     return agent;
   }
 
-  /** A new adult agent, identical to every other founder apart from tiny quirks. */
+  /** A new founder, identical to every other apart from tiny quirks and its place in life. */
   createFounder(rng: Rng, tick: number, x: number, y: number): Agent {
     const lifespanTicks = sampleLifespanTicks(rng);
+    const lifeFraction = founderLifeFraction(rng);
     const quirk = Array.from({ length: 8 }, () => rng.range(-1, 1));
     const data: AgentData = {
       id: this.nextId++,
@@ -89,7 +108,7 @@ export class Population {
       y,
       heading: rng.range(0, Math.PI * 2),
       home: { x, y },
-      bornTick: tick - Math.round(lifespanTicks * MATURITY_FRACTION),
+      bornTick: tick - Math.round(lifespanTicks * lifeFraction),
       lifespanTicks,
       needs: { energy: 1, rest: 1, social: 1, curiosity: 0.7 },
       health: 1,

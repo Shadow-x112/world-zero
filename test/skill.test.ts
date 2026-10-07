@@ -26,6 +26,12 @@ function ctxOf(world: World): AgentContext {
   return { world, population: world.population, index };
 }
 
+/** Makes a founder a young adult (the band is mixed-age; some tests need grown hands). */
+function adult(agent: Agent, world: World): Agent {
+  agent.bornTick = world.tick - Math.round(agent.lifespanTicks * 0.3);
+  return agent;
+}
+
 test("hands learn by doing, successes most, with diminishing returns", () => {
   const world = World.create({ seed: 101 });
   const [a, b] = world.population.list();
@@ -80,6 +86,7 @@ test("watching a success teaches a little and plants the recipe, but never maste
 test("a skilled adult shows a dear one its craft: skill, recipe, warmth, history", () => {
   const world = World.create({ seed: 105 });
   const [teacher, learner, stranger] = world.population.list();
+  adult(teacher, world);
   world.tick = Math.ceil(world.tick / 3600) * 3600 + 2520; // the teaching minute, in daylight
   world.calendar = { ...world.calendar, light: 1 };
   teacher.x = 300;
@@ -112,6 +119,7 @@ test("a skilled adult shows a dear one its craft: skill, recipe, warmth, history
 test("the cure is the first lesson: herb-lore outlives its discoverer", () => {
   const world = World.create({ seed: 106 });
   const [teacher, child] = world.population.list();
+  adult(teacher, world);
   world.tick = Math.ceil(world.tick / 3600) * 3600 + 2520;
   world.calendar = { ...world.calendar, light: 1 };
   teacher.x = 300;

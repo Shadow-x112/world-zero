@@ -8,7 +8,7 @@ import { Grid } from "../src/world/grid.ts";
 import { Terrain } from "../src/world/chunk.ts";
 import { findPath, canStep } from "../src/agents/pathfinding.ts";
 import { updateBody, healthCeiling, RATES } from "../src/agents/needs.ts";
-import { FOUNDER_COUNT, BODY_DAYS } from "../src/agents/population.ts";
+import { FOUNDER_COUNT, FOUNDER_YOUNGEST, FOUNDER_OLDEST, BODY_DAYS } from "../src/agents/population.ts";
 import type { Agent } from "../src/agents/agent.ts";
 
 const HOUR = 3600;
@@ -23,17 +23,26 @@ function bodyHours(agent: Agent, world: World, hours: number, ctx = { hasCompany
   return null;
 }
 
-test("the founders start together, grown, healthy and fed", () => {
+test("the founders start together, healthy and fed - a band of mixed ages", () => {
   const world = World.create({ seed: 2 });
   const agents = world.population.list();
   assert.equal(agents.length, FOUNDER_COUNT);
+  const lives: number[] = [];
   for (const a of agents) {
     assert.deepEqual(a.needs, { energy: 1, rest: 1, social: 1, curiosity: 0.7 });
     assert.equal(a.health, 1);
     assert.ok(Math.hypot(a.x, a.y) <= 8, "near the middle of the plain");
     const life = a.lifeFraction(world.tick);
-    assert.ok(life > 0.2 && life < 0.3, "grown up but young");
+    assert.ok(life >= FOUNDER_YOUNGEST - 1e-6 && life <= FOUNDER_OLDEST + 1e-6, "within the band's span of life");
+    lives.push(life);
+    // Even the youngest is all but grown when the first winter comes (day 30).
+    assert.ok(a.growth(world.tick + 30 * TICKS_PER_DAY) >= 0.65, "well along by the first cold");
+    assert.ok(a.growth(world.tick + 45 * TICKS_PER_DAY) >= 0.9, "and all but grown by its end");
   }
+  lives.sort((x, y) => x - y);
+  assert.ok(lives.at(-1)! - lives[0] > 0.15, "the youngest and eldest are far apart in life");
+  const grownNow = agents.filter((a) => a.grown(world.tick)).length;
+  assert.ok(grownNow >= 5 && grownNow < FOUNDER_COUNT, `grown hands and growing ones from the first day (${grownNow} grown)`);
   const spots = new Set(agents.map((a) => `${a.x},${a.y}`));
   assert.equal(spots.size, FOUNDER_COUNT, "each stands on its own tile");
   const quirks = new Set(agents.map((a) => a.quirk.join()));

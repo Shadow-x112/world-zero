@@ -123,6 +123,11 @@ function warmth(world: World, x: number, y: number, shelter: number, company: bo
  * known place promises the warmest night (shelter, and others close by),
  * a little less appealing the farther it is. Its own nest is favored.
  */
+/** A shared home at least this sheltered outpulls the open pile: the pair goes home. */
+export const HOME_SHELTERED = 0.4;
+/** A mate already asleep draws its partner to lie down beside it, wherever it lies. */
+export const MATE_ASLEEP_PULL = 0.9;
+
 export function nightDestination(agent: Agent, ctx: AgentContext): { x: number; y: number; shelter: boolean } | null {
   const world = ctx.world;
   const grid = world.grid;
@@ -153,10 +158,12 @@ export function nightDestination(agent: Agent, ctx: AgentContext): { x: number; 
       // Home pulls as hard as it is worth: a built refuge draws the pair in;
       // a bare patch of ground never outpulls the warm pile of everyone else.
       if (mate.nest) {
-        const worth = 0.15 + 0.35 * Math.min(1, shelterAt(world, mate.nest.x, mate.nest.y));
+        const homeShelter = Math.min(1, shelterAt(world, mate.nest.x, mate.nest.y));
+        const worth = homeShelter >= HOME_SHELTERED ? 0.6 + 0.2 * homeShelter : 0.15 + 0.35 * homeShelter;
         consider(mate.nest.x, mate.nest.y, NEST_NIGHT_RADIUS, worth, true);
       }
-      if (mate.asleep) consider(mate.tileX, mate.tileY, GATHER_FOR_NIGHT_RADIUS, 0.3, false, true);
+      // Wherever a mate has already lain down, that is where the night is spent.
+      if (mate.asleep) consider(mate.tileX, mate.tileY, GATHER_FOR_NIGHT_RADIUS, MATE_ASLEEP_PULL, false, true);
     }
   }
   // The young sleep by their family.

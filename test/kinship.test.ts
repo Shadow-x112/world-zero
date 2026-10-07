@@ -28,9 +28,10 @@ function ctxOf(world: World): AgentContext {
   return { world, population: world.population, index };
 }
 
-/** Two founders placed side by side, away from the crowd. */
+/** Two grown founders placed side by side, away from the crowd. */
 function couple(world: World, x = 300, y = 300): [Agent, Agent] {
   const [a, b] = world.population.list();
+  for (const p of [a, b]) p.bornTick = world.tick - Math.round(p.lifespanTicks * 0.3); // young adults
   a.x = x;
   a.y = y;
   b.x = x + 1;
@@ -245,6 +246,7 @@ test("the pull home: loneliness wins, the empty hearth is left, home moves to th
   const { LONELY_PULL } = await import("../src/agents/kinship.ts");
   const world = World.create({ seed: 69 });
   const [far, friend, child] = world.population.list();
+  for (const x of [far, friend, child]) x.bornTick = world.tick - Math.round(x.lifespanTicks * 0.3);
   // A lone AI with a nest far from everyone, and a friend back in the village.
   far.x = 500;
   far.y = 500;
@@ -269,6 +271,7 @@ test("the pull home: loneliness wins, the empty hearth is left, home moves to th
   assert.notEqual(young.nest, null, "a child does not strike out on its own");
   // And someone whose people were near only yesterday feels no such pull.
   const settled = world.population.list()[3];
+  settled.bornTick = world.tick - Math.round(settled.lifespanTicks * 0.3);
   settled.x = 600;
   settled.y = 600;
   settled.nest = { x: 600, y: 600, lastSlept: world.tick };

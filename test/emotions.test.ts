@@ -29,6 +29,12 @@ function ctxOf(world: World): AgentContext {
   return { world, population: world.population, index };
 }
 
+/** Makes a founder a young adult (the band is mixed-age; some tests need grown hands). */
+function adult(agent: Agent, world: World): Agent {
+  agent.bornTick = world.tick - Math.round(agent.lifespanTicks * 0.3);
+  return agent;
+}
+
 function hoursOfQuiet(agent: Agent, hours: number, company = false): void {
   for (let i = 0; i < hours * TICKS_PER_HOUR; i++) tickEmotions(agent, company, 0, false);
 }
@@ -164,6 +170,8 @@ test("a save from before feelings existed loads with everyone even-keeled", () =
 test("a pair forming is a joy to both; drifting apart is a sorrow", () => {
   const world = World.create({ seed: 80 });
   const [a, b] = world.population.list();
+  adult(a, world);
+  adult(b, world);
   b.x = a.x + 1;
   b.y = a.y;
   a.bonds[b.id] = { trust: 0.6, affection: 0.6, lastNear: world.tick };
