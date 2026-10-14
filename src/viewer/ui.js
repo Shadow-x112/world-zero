@@ -75,6 +75,10 @@ export class Ui {
       const click = !down.moved && performance.now() - down.t < 600 && down.button === 0;
       down = null;
       if (!click) return;
+      if (this.creator?.picking) {
+        this.creator.groundClick(e.clientX, e.clientY);
+        return;
+      }
       const id = this.pick(e.clientX, e.clientY);
       if (id !== null) this.select(id);
     });
@@ -210,7 +214,11 @@ export class Ui {
     const placed = [];
     for (const [id, kind] of want) {
       const w = this.walkers.list.get(id);
-      if (!w || w.dx === undefined) continue;
+      if (!w || w.dx === undefined) {
+        this.tags.get(id)?.remove();
+        this.tags.delete(id);
+        continue;
+      }
       let el = this.tags.get(id);
       if (!el) {
         el = document.createElement("div");
@@ -264,7 +272,9 @@ export class Ui {
       $("inspSub").textContent = "no longer living";
       body.innerHTML = a.unknown
         ? `<p class="gone">No one by this name has lived here.</p>`
-        : `<p class="gone">Died of ${esc(a.cause)} at ${Math.floor(a.ageDays)} days.</p>`;
+        : a.cause === "vanished"
+          ? `<p class="gone">Vanished at ${Math.floor(a.ageDays)} days; no one knew where.</p>`
+          : `<p class="gone">Died of ${esc(a.cause)} at ${Math.floor(a.ageDays)} days.</p>`;
       return;
     }
     $("inspSub").textContent = `${a.grown ? "adult" : "child"} · ${Math.floor(a.ageDays)} days old${this.following ? "" : " · not following"}`;
@@ -305,7 +315,13 @@ export class Ui {
         body.querySelectorAll(".hidden-block [data-ai]").forEach((el) => el.addEventListener("click", () => this.select(Number(el.dataset.ai))));
         body.querySelectorAll(".hidden-block [data-act]").forEach((el) =>
           el.addEventListener("click", async () => {
-            await this.creator.act(el.dataset.act, { id: Number(el.dataset.id) });
+            const params = { id: Number(el.dataset.id) };
+            if (el.dataset.act === "move") {
+              const at = await this.creator.pickGround(`Click the ground where #${String(params.id).padStart(2, "0")} should stand.`);
+              if (!at) return;
+              Object.assign(params, at);
+            }
+            await this.creator.act(el.dataset.act, params);
             this.loadInspector(false);
           }),
         );

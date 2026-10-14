@@ -22,7 +22,7 @@ export interface Body {
   y: number;
   heading: number;
   diedTick: number;
-  cause: DeathCause;
+  cause: DeathCause | "vanished";
   ageDays: number;
 }
 
@@ -98,9 +98,9 @@ export class Population {
   }
 
   /** A new founder, identical to every other apart from tiny quirks and its place in life. */
-  createFounder(rng: Rng, tick: number, x: number, y: number): Agent {
+  createFounder(rng: Rng, tick: number, x: number, y: number, lifeFraction?: number): Agent {
     const lifespanTicks = sampleLifespanTicks(rng);
-    const lifeFraction = founderLifeFraction(rng);
+    lifeFraction ??= founderLifeFraction(rng);
     const quirk = Array.from({ length: 8 }, () => rng.range(-1, 1));
     const data: AgentData = {
       id: this.nextId++,

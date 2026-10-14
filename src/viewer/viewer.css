@@ -205,6 +205,12 @@ body.creator .creator-btn { color: #ffcf4a; }
 .creator-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .creator-acts .btn { font-size: 12px; padding: 4px 10px; color: #ffcf4a; border-color: rgba(255, 207, 74, 0.4); }
 
+body.picking #world { cursor: crosshair; }
+.newcomers { display: grid; gap: 6px; font-size: 12px; }
+.newcomers label { display: grid; grid-template-columns: 80px 1fr; align-items: center; color: var(--dim); }
+.newcomers input, .newcomers select { background: rgba(0, 0, 0, 0.35); border: 1px solid var(--edge); color: var(--ink); border-radius: 3px; padding: 4px 6px; font: inherit; min-width: 0; }
+.newcomers .btn { justify-self: end; }
+
 /* ---------- A season turning ---------- */
 .season-card {
   position: fixed; z-index: 4; left: 50%; top: 38%; transform: translate(-50%, -50%); text-align: center; pointer-events: none;

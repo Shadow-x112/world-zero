@@ -10,8 +10,10 @@ const label = (id) => `#${String(id).padStart(2, "0")}`;
 const pct = (v) => `${Math.round(v * 100)}%`;
 
 export class Creator {
-  constructor({ scene, walkers, ui, stream }) {
-    Object.assign(this, { walkers, ui, stream });
+  constructor({ scene, walkers, ui, stream, camera, terrain, canvas }) {
+    Object.assign(this, { walkers, ui, stream, camera, terrain, canvas });
+    this.picking = null;
+    this.ray = new THREE.Raycaster();
     this.on = false;
     this.web = new WebLines(scene);
     this.showWeb = false;
@@ -39,6 +41,7 @@ export class Creator {
       if (e.key === "Escape") {
         $("keyDialog").classList.add("hidden");
         this.closeDialog(false);
+        this.endPick(null);
       }
     });
     // The undo countdown ticks down in place.
@@ -121,6 +124,13 @@ export class Creator {
     $("creatorBody").innerHTML = `
       <h3>Your acts</h3>
       ${this.renderLog()}
+      <h3>Bring newcomers</h3>
+      <form class="newcomers" id="newcomersForm">
+        <label>how many <input type="number" id="ncCount" min="1" max="12" value="3"></label>
+        <label>ages <select id="ncAges"><option value="young">young adults</option><option value="adult">adults</option><option value="mixed">mixed, with children</option></select></label>
+        <label>where <select id="ncWhere"><option value="edge">the edge of the known world</option><option value="pick">a spot I choose</option></select></label>
+        <button class="btn go" type="submit">Bring them…</button>
+      </form>
       <h3>The world</h3>
       <div class="kv"><span>seed</span><b>${o.seed}</b><span>generation</span><b>${o.generation}</b><span>day</span><b>${o.day}</b><span>ground seen</span><b>${o.explored} chunks</b></div>
       <h3>Winters to come</h3>
@@ -144,6 +154,59 @@ export class Creator {
     });
     renderCharts($("charts"), h.days);
     this.bindLog();
+    $("newcomersForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const params = { count: Number($("ncCount").value), ages: $("ncAges").value };
+      if ($("ncWhere").value === "pick") {
+        const at = await this.pickGround("Click the ground where the strangers should appear.");
+        if (!at) return;
+        Object.assign(params, at);
+      }
+      const entry = await this.act("newcomers", params);
+      if (!entry) return;
+      // Go and see them: the chronicle entry the act wrote says where they arrived.
+      try {
+        const r = await api.chronicle(0, 3);
+        const told = r.entries.reverse().find((e) => e.data?.ids && typeof e.data.x === "number");
+        if (told) {
+          this.ui.following = false;
+          this.ui.flyTo(told.data.x, told.data.y, { close: true });
+        }
+      } catch {}
+    });
+  }
+
+  // ---------- Choosing a place on the ground ----------
+
+  /** Waits for a click on the ground; resolves to a tile, or null if cancelled (Esc). */
+  pickGround(prompt) {
+    this.endPick(null);
+    document.body.classList.add("picking");
+    this.toast(`${prompt} Esc to cancel.`);
+    return new Promise((resolve) => (this.picking = resolve));
+  }
+
+  endPick(result) {
+    if (!this.picking) return;
+    const resolve = this.picking;
+    this.picking = null;
+    document.body.classList.remove("picking");
+    resolve(result);
+  }
+
+  /** A click while picking: which tile of ground lies under it? */
+  groundClick(px, py) {
+    const r = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((px - r.left) / r.width) * 2 - 1, -((py - r.top) / r.height) * 2 + 1);
+    this.ray.setFromCamera(ndc, this.camera);
+    const hit = this.ray.intersectObjects(this.terrain.group.children, false)[0];
+    if (!hit) {
+      this.toast("That is not ground anyone has seen. Click the land.", true);
+      return;
+    }
+    // Nudge into the face that was hit, so a click on a wall's side picks the wall's tile.
+    const p = hit.point.clone().addScaledVector(hit.face?.normal ?? new THREE.Vector3(), -0.01);
+    this.endPick({ x: Math.round(p.x), y: Math.round(p.z) });
   }
 
   // ---------- The private log, with undo ----------
@@ -346,7 +409,13 @@ export class Creator {
     return `
       <div class="hidden-block">
         <h3>Creator</h3>
-        <div class="creator-acts"><button class="btn" data-act="heal" data-id="${h.id}">Heal</button></div>
+        <div class="creator-acts">
+          <button class="btn" data-act="heal" data-id="${h.id}" title="Health full, poison and injuries gone">Heal</button>
+          <button class="btn" data-act="calm" data-id="${h.id}" title="Fear and anger fall away; grief softens">Calm</button>
+          <button class="btn" data-act="inspire" data-id="${h.id}" title="A restless wish to see new things">Inspire</button>
+          <button class="btn" data-act="move" data-id="${h.id}" title="Set it down somewhere else">Move…</button>
+          <button class="btn danger" data-act="remove" data-id="${h.id}" title="Take it from the world (a death)">Remove…</button>
+        </div>
         <h3>Hidden · life</h3>
         <div class="kv"><span>lived</span><b>${pct(h.lifeFraction)} of its span</b><span>days left</span><b>about ${h.daysLeft}</b><span>poison</span><b>${h.toxin.toFixed(2)}</b><span>parents</span><b>${h.parents ? h.parents.map(label).join(" & ") : "none (a founder)"}</b></div>
         <h3>Hidden · nature</h3><div class="bars">${list(h.personality, true)}</div>

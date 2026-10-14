@@ -20,7 +20,11 @@ import { dailyGrudges, quarrels } from "./conflict.ts";
 /** Days after which unseen ground fades from an AI's memory of the world. */
 export const KNOWN_FADE_DAYS = 12;
 
-const DEATH_WORDS: Record<DeathCause, string> = {
+/** How a life can end: a cause of harm, or simply gone (taken away by the creator). */
+export type Fate = DeathCause | "vanished";
+
+const DEATH_WORDS: Record<Fate, string> = {
+  vanished: "was gone one day, and no one knew where",
   burns: "burned to death",
   starvation: "starved",
   exhaustion: "collapsed from exhaustion and never woke",
@@ -99,29 +103,34 @@ export class AgentSystem implements System {
     }
   }
 
-  kill(world: World, agent: Agent, cause: DeathCause): void {
-    dropEverything(agent, world); // its belongings fall where it fell
-    const population = world.population;
-    population.remove(agent.id);
-    population.deaths++;
-    grieveFor(world, agent); // the loss lands on everyone who loved it
-    const ageDays = agent.ageDays(world.tick);
-    population.bodies.push({
-      agentId: agent.id,
-      x: agent.x,
-      y: agent.y,
-      heading: agent.heading,
-      diedTick: world.tick,
-      cause,
-      ageDays,
-    });
-    const first = population.deaths === 1 ? "The first death: " : "";
-    world.chronicle.add(
-      world.tick,
-      "death",
-      `${first}${agent.label} ${DEATH_WORDS[cause]}, aged ${Math.floor(ageDays)} days. ${population.count} remain.`,
-      { agentId: agent.id, cause, x: agent.x, y: agent.y, ageDays },
-    );
-    world.events.emit("agentDied", { agentId: agent.id, cause });
+  kill(world: World, agent: Agent, cause: Fate): void {
+    killAgent(world, agent, cause);
   }
+}
+
+/** A life ends: belongings fall where it stood, the grief lands, a body remains a while. */
+export function killAgent(world: World, agent: Agent, cause: Fate): void {
+  dropEverything(agent, world); // its belongings fall where it fell
+  const population = world.population;
+  population.remove(agent.id);
+  population.deaths++;
+  grieveFor(world, agent); // the loss lands on everyone who loved it
+  const ageDays = agent.ageDays(world.tick);
+  population.bodies.push({
+    agentId: agent.id,
+    x: agent.x,
+    y: agent.y,
+    heading: agent.heading,
+    diedTick: world.tick,
+    cause,
+    ageDays,
+  });
+  const first = population.deaths === 1 ? "The first death: " : "";
+  world.chronicle.add(
+    world.tick,
+    "death",
+    `${first}${agent.label} ${DEATH_WORDS[cause]}, aged ${Math.floor(ageDays)} days. ${population.count} remain.`,
+    { agentId: agent.id, cause, x: agent.x, y: agent.y, ageDays },
+  );
+  world.events.emit("agentDied", { agentId: agent.id, cause });
 }

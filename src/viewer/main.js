@@ -293,7 +293,7 @@ api.palette().then((p) => terrain.setPalette(p.materials)).catch(() => {});
 refreshStatus();
 setInterval(refreshStatus, 15000);
 ui.loadChronicle();
-const creator = new Creator({ scene, walkers, ui, stream });
+const creator = new Creator({ scene, walkers, ui, stream, camera, terrain, canvas });
 ui.creator = creator;
 
 // ---------- Frame loop ----------
