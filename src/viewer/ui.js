@@ -296,6 +296,16 @@ export class Ui {
     body.querySelectorAll("[data-ai]").forEach((el) => el.addEventListener("click", () => this.select(Number(el.dataset.ai))));
     body.querySelector("[data-follow]")?.addEventListener("click", () => this.select(a.id));
     if (first) body.scrollTop = 0;
+    // The creator also sees the numbers behind the words.
+    if (this.creator?.on) {
+      const keep = body.scrollTop;
+      this.creator.hiddenFor(a.id).then((html) => {
+        if (!html || this.selected !== a.id) return;
+        body.insertAdjacentHTML("beforeend", html);
+        body.querySelectorAll(".hidden-block [data-ai]").forEach((el) => el.addEventListener("click", () => this.select(Number(el.dataset.ai))));
+        body.scrollTop = keep;
+      });
+    }
   }
 
   // ---------- Chronicle ----------
@@ -393,21 +403,25 @@ export class Ui {
   // ---------- Panels and keys ----------
 
   bindPanels() {
-    const tab = (which) => {
-      const chron = which === "chron";
-      $("tabChron").setAttribute("aria-selected", String(chron));
-      $("tabPeople").setAttribute("aria-selected", String(!chron));
-      $("chronList").classList.toggle("hidden", !chron);
-      $("peopleList").classList.toggle("hidden", chron);
-      if (!chron) this.renderPeople();
-    };
-    $("tabChron").addEventListener("click", () => tab("chron"));
-    $("tabPeople").addEventListener("click", () => tab("people"));
+    $("tabChron").addEventListener("click", () => this.openTab("chron"));
+    $("tabPeople").addEventListener("click", () => this.openTab("people"));
+    $("tabCreator").addEventListener("click", () => this.openTab("creator"));
     $("sideClose").addEventListener("click", () => this.showSide(false));
     $("sideOpen").addEventListener("click", () => this.showSide(true));
     $("inspClose").addEventListener("click", () => this.deselect());
     $("prevAi").addEventListener("click", () => this.cycle(-1));
     $("nextAi").addEventListener("click", () => this.cycle(1));
+  }
+
+  /** Shows one of the side panel's tabs: "chron", "people" or "creator". */
+  openTab(which) {
+    const tabs = { chron: ["tabChron", "chronList"], people: ["tabPeople", "peopleList"], creator: ["tabCreator", "creatorPanel"] };
+    for (const [name, [tab, panel]] of Object.entries(tabs)) {
+      $(tab).setAttribute("aria-selected", String(name === which));
+      $(panel).classList.toggle("hidden", name !== which);
+    }
+    this.showSide(true);
+    if (which === "people") this.renderPeople();
   }
 
   showSide(on) {

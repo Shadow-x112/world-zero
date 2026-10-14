@@ -8,6 +8,7 @@
 // Writes are atomic: data goes to a temporary file which is then renamed over
 // the old one, so a crash mid-save can never leave a half-written world.
 
+import { historyFromChronicle, type DayRecord } from "../core/history.ts";
 import { mkdir, readFile, readdir, rename, copyFile, rm, open } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -28,7 +29,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 13;
+export const SAVE_FORMAT_VERSION = 14;
 
 interface SavedChunk {
   cx: number;
@@ -61,6 +62,8 @@ export interface SaveData {
   /** Items lying in the world, and the next unused item id. */
   groundItems: GroundItem[];
   itemSeq: number;
+  /** Daily vital statistics (format 14+). */
+  history: DayRecord[];
 }
 
 /** Upgrades older saves step by step. Key = format version being upgraded from. */
@@ -243,6 +246,18 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
       })),
     },
   }),
+  // 13 -> 14: daily history. Past days are rebuilt from the chronicle as far as it can
+  // tell (who lived, was born and died); the rest is recorded from now on.
+  13: (data) => {
+    const history = historyFromChronicle(data.chronicle?.entries ?? [], data.tick);
+    // The rebuilt totals must agree with the population's own counters from here on.
+    const last = history[history.length - 1];
+    if (last && data.population) {
+      last.totalBorn = data.population.births ?? last.totalBorn;
+      last.totalDied = data.population.deaths ?? last.totalDied;
+    }
+    return { ...data, format: 14, history };
+  },
 };
 
 function encodeLayer(array: LayerArray): string {
@@ -288,6 +303,7 @@ export function serializeWorld(world: World, speed: number): SaveData {
     firsts: [...world.firsts],
     groundItems: world.groundItems.toJSON(),
     itemSeq: world.itemSeq,
+    history: world.history,
   };
 }
 
@@ -310,6 +326,7 @@ export function deserializeWorld(raw: any): { world: World; speed: number } {
   const world = World.restore(save.meta, save.tick, rng, chronicle, population, materials, save.extinctTick, (w) => {
     for (const key of save.firsts) w.firsts.add(key);
     w.itemSeq = save.itemSeq;
+    w.history = save.history ?? [];
     for (const g of GroundItems.fromJSON(save.groundItems).all()) w.groundItems.drop(g.x, g.y, g.item);
     for (const saved of save.chunks) {
       const chunk = new Chunk(saved.cx, saved.cy, saved.gen);

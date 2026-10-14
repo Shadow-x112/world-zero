@@ -33,8 +33,26 @@ export function decodeChunk(c) {
   };
 }
 
+/** The creator's key, once given (kept only in this browser). */
+let creatorKey = "";
+try {
+  creatorKey = localStorage.getItem("wz-key") || "";
+} catch {}
+export function setCreatorKey(k) {
+  creatorKey = k || "";
+  try {
+    if (creatorKey) localStorage.setItem("wz-key", creatorKey);
+    else localStorage.removeItem("wz-key");
+  } catch {}
+}
+export function getCreatorKey() {
+  return creatorKey;
+}
+
 async function getJson(path) {
-  const res = await fetch(path, { headers: { Accept: "application/json" } });
+  const headers = { Accept: "application/json" };
+  if (creatorKey) headers.Authorization = `Bearer ${creatorKey}`;
+  const res = await fetch(path, { headers });
   if (!res.ok) {
     const err = new Error(`${path}: ${res.status}`);
     err.status = res.status;
@@ -50,6 +68,7 @@ export const api = {
   ais: () => getJson("/api/ais"),
   ai: (id) => getJson(`/api/ai/${id}`),
   chronicle: (since, limit) => getJson(`/api/chronicle?since=${since}&limit=${limit}`),
+  creator: (what) => getJson(`/api/creator/${what}`),
 
   /** Fetches chunks in batches of up to 64; calls onBatch with each decoded batch. */
   async chunks(list, onBatch) {
@@ -82,7 +101,8 @@ export function follow({ onSnapshot, onChanges, onState }) {
   let retry = null;
   const open = () => {
     if (closed) return;
-    es = new EventSource("/api/stream");
+    // The creator is never turned away for lack of room.
+    es = new EventSource(creatorKey ? `/api/stream?key=${encodeURIComponent(creatorKey)}` : "/api/stream");
     es.onopen = () => onState?.("live");
     es.onerror = () => {
       onState?.("reconnecting");
@@ -96,9 +116,16 @@ export function follow({ onSnapshot, onChanges, onState }) {
     es.addEventListener("changes", (ev) => onChanges(JSON.parse(ev.data)));
   };
   open();
-  return () => {
-    closed = true;
-    clearTimeout(retry);
-    es?.close();
+  return {
+    stop() {
+      closed = true;
+      clearTimeout(retry);
+      es?.close();
+    },
+    /** Reconnects (e.g. after the creator's key is given). */
+    reopen() {
+      es?.close();
+      open();
+    },
   };
 }

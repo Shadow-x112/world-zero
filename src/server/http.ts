@@ -19,6 +19,7 @@
 //   GET  /api/chunkdata?c=cx,cy;cx,cy    the ground of up to 64 chunks
 //   GET  /api/stream                     live changes (Server-Sent Events), limited watchers
 // Creator only:
+//   GET  /api/creator/overview | web | families | words | history | ai/<id>   hidden truths
 //   GET  /api/materials                  every material's true properties (also in /api/palette)
 //   POST /api/control                    {"action":"pause"|"resume"|"speed"|"save"|"backup", "speed"?: n}
 //   GET  /api/admin/save                 download the world as it is this moment (.json.gz)
@@ -38,6 +39,7 @@ import { lexiconReport } from "../agents/language.ts";
 import { chunkIndex, encodeChunk, fullPalette, publicPalette } from "./terrain.ts";
 import { RateLimiter } from "./limits.ts";
 import { ViewerFiles } from "./static.ts";
+import * as creatorViews from "./creator.ts";
 
 /** Largest save the adopt endpoint accepts (compressed). */
 export const MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
@@ -185,6 +187,29 @@ export class WorldServer {
     const runner = this.runner;
     if (!runner) return json(res, 503, { error: "no world here yet", state: this.state });
     const w = runner.world;
+
+    if (method === "GET" && path.startsWith("/api/creator/")) {
+      if (!creator) return needKey();
+      const what = path.slice("/api/creator/".length);
+      switch (what) {
+        case "overview":
+          return send(200, creatorViews.overview(w));
+        case "web":
+          return send(200, creatorViews.web(w));
+        case "families":
+          return send(200, creatorViews.families(w));
+        case "words":
+          return send(200, creatorViews.words(w));
+        case "history":
+          return send(200, creatorViews.history(w));
+      }
+      const m = what.match(/^ai\/(\d+)$/);
+      if (m) {
+        const agent = w.population.get(Number(m[1]));
+        return agent ? send(200, creatorViews.hiddenAi(w, agent)) : json(res, 404, { error: `no living AI #${m[1]}` });
+      }
+      return json(res, 404, { error: "not found" });
+    }
 
     if (method === "GET") {
       switch (path) {

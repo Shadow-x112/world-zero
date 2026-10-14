@@ -425,7 +425,7 @@ test("the viewer's files are served, and only them", async () => {
     assert.match(page.body, /importmap/);
     assert.match(String(page.headers["content-security-policy"]), /cdn\.jsdelivr\.net/, "Three.js may come from its pinned CDN");
     assert.match(page.body, /three@\d+\.\d+\.\d+/, "and its version is pinned");
-    for (const f of ["main.js", "terrain.js", "api.js", "sky.js", "quality.js", "figures.js", "ui.js", "atmosphere.js", "viewer.css"]) {
+    for (const f of ["main.js", "terrain.js", "api.js", "sky.js", "quality.js", "figures.js", "ui.js", "atmosphere.js", "creator.js", "viewer.css"]) {
       const r = await call(port, "GET", `/viewer/${f}`);
       assert.equal(r.status, 200, f);
     }
@@ -433,6 +433,43 @@ test("the viewer's files are served, and only them", async () => {
     for (const bad of ["/viewer/../server/http.ts", "/viewer/%2e%2e%2fhttp.ts", "/viewer/.env", "/viewer/nope.js", "/viewer/"]) {
       assert.equal((await call(port, "GET", bad)).status, 404, bad);
     }
+  } finally {
+    await server.close();
+  }
+});
+
+test("the creator's view: hidden truths behind the key, and only reading", async () => {
+  const world = World.create({ seed: 315 });
+  for (let i = 0; i < 2 * 86400; i++) world.step();
+  const [a, b] = world.population.list();
+  a.bonds[b.id] = { trust: 0.6, affection: 0.7, lastNear: world.tick };
+  b.bonds[a.id] = { trust: 0.5, affection: 0.6, lastNear: world.tick };
+  a.grudges[b.id] = 0.4;
+  const before = JSON.stringify({ ...serializeWorld(world, 1), savedAt: "" });
+  const { server, runner, port } = await serve(world);
+  server.attach(runner);
+  try {
+    for (const what of ["overview", "web", "families", "words", "history", `ai/${a.id}`]) {
+      assert.equal((await call(port, "GET", `/api/creator/${what}`)).status, 401, `${what} needs the key`);
+    }
+    const get = async (what: string) => JSON.parse((await call(port, "GET", `/api/creator/${what}`, { key: KEY })).body);
+    const o = await get("overview");
+    assert.equal(o.seed, world.meta.seed);
+    assert.equal(o.winters.length, 6, "the winters to come, foretold");
+    assert.ok("nourishment" in o.materials[0].props);
+    const webData = await get("web");
+    assert.ok(webData.edges.some((e: any) => e.a === Math.min(a.id, b.id) && e.b === Math.max(a.id, b.id) && e.affection === 0.65));
+    assert.ok(webData.grudges.some((g: any) => g.from === a.id && g.to === b.id));
+    const fam = await get("families");
+    assert.equal(fam.people.filter((p: any) => p.alive).length, world.population.count);
+    const words = await get("words");
+    assert.equal(words.living, world.population.count);
+    const hist = await get("history");
+    assert.equal(hist.days.length, world.history.length);
+    const hidden = await get(`ai/${a.id}`);
+    assert.ok("courage" in hidden.personality && hidden.daysLeft > 0);
+    assert.equal((await call(port, "GET", "/api/creator/ai/99999", { key: KEY })).status, 404);
+    assert.equal(JSON.stringify({ ...serializeWorld(world, 1), savedAt: "" }), before, "looking changed nothing");
   } finally {
     await server.close();
   }

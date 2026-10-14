@@ -24,7 +24,20 @@
     <div class="brand" id="brand">WORLD ZERO</div>
     <div class="clock"><span class="season-dot" id="seasonDot"></span><span id="clock">connecting…</span></div>
     <div class="meta" id="meta"></div>
+    <button class="creator-btn" id="creatorBtn" title="For the creator only">creator ›</button>
   </header>
+
+  <!-- The creator's key -->
+  <div class="panel key-dialog hidden" id="keyDialog" role="dialog" aria-labelledby="keyTitle">
+    <h2 id="keyTitle">Creator</h2>
+    <p class="dim">The creator sees what is hidden. Nothing you see here changes the world.</p>
+    <form id="keyForm" class="key-row">
+      <input id="keyInput" type="password" autocomplete="current-password" placeholder="creator key" aria-label="Creator key">
+      <button type="submit" class="btn">Enter</button>
+      <button type="button" class="btn ghost" id="keyCancel">Cancel</button>
+    </form>
+    <p class="msg" id="keyMsg" role="alert"></p>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <div class="season-card" id="seasonCard" role="status" aria-live="polite">
@@ -42,10 +55,16 @@
     <div class="tabs" role="tablist">
       <button role="tab" id="tabChron" aria-selected="true" aria-controls="chronList">Chronicle</button>
       <button role="tab" id="tabPeople" aria-selected="false" aria-controls="peopleList">People</button>
+      <button role="tab" id="tabCreator" class="hidden" aria-selected="false" aria-controls="creatorPanel">Creator</button>
       <button class="icon" id="sideClose" aria-label="Hide panel" title="Hide (C)">–</button>
     </div>
     <ol class="list" id="chronList" role="tabpanel" aria-labelledby="tabChron"></ol>
     <ol class="list hidden" id="peopleList" role="tabpanel" aria-labelledby="tabPeople"></ol>
+    <div class="creator-panel hidden" id="creatorPanel" role="tabpanel" aria-labelledby="tabCreator">
+      <div id="creatorBody" class="creator-body"><p class="dim">Reading the world…</p></div>
+      <div class="creator-foot"><button class="btn ghost" id="creatorLock">Lock</button></div>
+      <input type="checkbox" id="webToggle" class="hidden" aria-hidden="true" tabindex="-1">
+    </div>
   </section>
   <button class="panel side-open hidden" id="sideOpen" aria-label="Show chronicle">Chronicle</button>
 

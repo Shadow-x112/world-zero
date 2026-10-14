@@ -14,6 +14,7 @@ import { Quality } from "./quality.js";
 import { Walkers } from "./figures.js";
 import { Ui } from "./ui.js";
 import { Fires, Snow, SeasonPulse } from "./atmosphere.js";
+import { Creator } from "./creator.js";
 
 const $ = (id) => document.getElementById(id);
 let fpsFrames = 0, fpsTime = 0, fpsShown = 0;
@@ -260,7 +261,7 @@ async function refreshStatus() {
 
 // ---------- Live ----------
 
-follow({
+const stream = follow({
   onSnapshot(s) {
     if (boot !== s.boot) {
       // A new server run (or the first visit): chunk revisions restarted, so ask again.
@@ -292,6 +293,8 @@ api.palette().then((p) => terrain.setPalette(p.materials)).catch(() => {});
 refreshStatus();
 setInterval(refreshStatus, 15000);
 ui.loadChronicle();
+const creator = new Creator({ scene, walkers, ui, stream });
+ui.creator = creator;
 
 // ---------- Frame loop ----------
 
@@ -312,6 +315,7 @@ function frame() {
   fires.update(t);
   snow.update(t, dt, controls.target, renderer.getPixelRatio());
   pulse.update(performance.now());
+  creator.update();
   composer.render();
   quality.sample(dt, building);
   fpsFrames++;
@@ -327,4 +331,4 @@ function frame() {
 requestAnimationFrame(frame);
 
 // For poking at in the browser console.
-window.worldZero = { scene, camera, controls, terrain, sky, walkers, quality, ui, fires, snow, pulse, seasonTurned };
+window.worldZero = { scene, camera, controls, terrain, sky, walkers, quality, ui, fires, snow, pulse, seasonTurned, creator };

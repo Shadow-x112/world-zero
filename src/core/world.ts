@@ -1,6 +1,7 @@
 // The world: everything that exists, advanced one tick at a time.
 // Systems (agents, materials, crafting...) plug in and run every tick in order.
 
+import { HistorySystem, type DayRecord } from "./history.ts";
 import { Chronicle } from "./chronicle.ts";
 import { START_TICK } from "./constants.ts";
 import { EventBus } from "./events.ts";
@@ -48,6 +49,8 @@ export class World {
   tick: number;
   /** Items lying in the world that no one carries. */
   groundItems = new GroundItems();
+  /** One record of vital statistics per world day (see core/history.ts). */
+  history: DayRecord[] = [];
   /** Burning tiles right now (an index over the grid's fire layer). */
   readonly fireTiles = new Map<number, { x: number; y: number }>();
   /** Next unused item id. */
@@ -87,6 +90,7 @@ export class World {
     this.addSystem(new Weather());
     this.addSystem(new Drying());
     this.addSystem(new FireSystem());
+    this.addSystem(new HistorySystem());
   }
 
   /** A world rebuilt from saved parts (see persist/store.ts). */
