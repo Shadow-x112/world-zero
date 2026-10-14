@@ -88,7 +88,16 @@ Decisions made while planning, before any agent code exists. Later steps build o
 ## Running
 
 - The engine runs headless; a separate 3D viewer (Three.js) connects to watch.
-- For now it runs on the home PC. Later it moves to a 24/7 server (Railway) without a rewrite.
+- It ran on the home PC first, then moved to a 24/7 server (Railway) without a rewrite.
+
+## Implementation notes (step 6: the server)
+
+- The window is a small web server inside the world's own process (node:http only, no libraries). It reads the world; only the creator's controls change anything, and they are the same as the console's (pause, speed, save, backup).
+- Live stream: Server-Sent Events. A watcher gets a snapshot (every AI's position, heading and action; burning tiles), then every 250 ms only what changed: AIs that moved or changed action, the dead as "gone", fires lit and put out, new chronicle entries. Nothing is computed while no one watches. A keep-alive every 15 s stops proxies closing a quiet stream.
+- Privacy: everything but /health and the status page needs the creator key. Whether watching is public is decided with the viewer (step 7).
+- One world, one keeper: a lock file (refreshed every 15 s, stale after 60 s) means a second process on the same data folder waits until the first has saved and let go. This covers a redeploy where the new copy starts before the old one stops.
+- Moving a world: a new server started with WAIT_FOR_WORLD=1 and an empty volume does not create a world; it waits for a save to be uploaded, checks it is a real world, and takes it in. It refuses whenever a world (or any backup) is already there, so the living world can never be overwritten through the window.
+- Railway: built from the Dockerfile (Node 24), volume at /data, health check /health, restart always, and a 30 s shutdown window (RAILWAY_DEPLOYMENT_DRAINING_SECONDS) so the old copy can save before it is stopped. Railway's own default is to kill instantly.
 
 ## Implementation notes (step 2)
 

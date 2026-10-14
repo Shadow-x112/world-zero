@@ -429,6 +429,31 @@ export class Store {
     }
   }
 
+  /** The world as it is this moment, compressed (for downloading a copy). */
+  async exportSave(world: World, speed: number): Promise<Buffer> {
+    return gzipAsync(Buffer.from(JSON.stringify(serializeWorld(world, speed))));
+  }
+
+  /**
+   * Brings a world here from elsewhere (moving it between machines). Only allowed when
+   * this folder holds no world: a living world is never overwritten.
+   */
+  async adopt(gz: Buffer): Promise<{ world: World; speed: number }> {
+    if (this.hasSave() || (await this.listBackups()).length > 0) {
+      throw new Error("This folder already holds a world; refusing to overwrite it");
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse((await gunzipAsync(gz)).toString("utf8"));
+    } catch {
+      throw new Error("That is not a compressed world save (.json.gz)");
+    }
+    const { world, speed } = deserializeWorld(raw); // throws if it is not a world
+    await this.ensureDirs();
+    await writeAtomic(this.currentPath, gz);
+    return { world, speed };
+  }
+
   /** Loads the newest readable save: current, then previous, then backups. */
   async load(): Promise<{ world: World; speed: number; source: string } | null> {
     const candidates = [this.currentPath, this.previousPath, ...(await this.listBackups()).reverse()];

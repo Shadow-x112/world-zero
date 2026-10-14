@@ -14,6 +14,7 @@ Requires Node.js 22.18 or newer (TypeScript runs directly, no build step, no dep
 node src/main.ts                run the world (creates it on first start)
 node src/main.ts --speed 10     run at 10x
 node src/main.ts --data <dir>   use a different data folder, e.g. for experiments
+node src/main.ts --port 8080    also open the world's window (web server) on this port
 node --test "test/**/*.test.ts" run the tests
 ```
 
@@ -38,6 +39,22 @@ The world lives in `data/` (not in git). There is only ever one world: it is nev
 
 Important events (deaths, firsts, milestones) are printed as they happen, marked with ✦.
 
+## The world's window (server)
+
+With `--port` (or the `PORT` environment variable) the world also serves a small web window: a status page at `/` and an API under `/api/` (status, chronicle, AIs, one AI, reports, a live stream of changes, and the creator's controls). Everything except `/health` and the page itself needs the creator key (`CREATOR_KEY`, or a key made once and kept in `<data>/creator-key.txt`).
+
+| Setting | Meaning |
+| --- | --- |
+| `PORT` | Open the window on this port |
+| `HOST` | Listen address (`0.0.0.0` on Railway, `127.0.0.1` otherwise) |
+| `DATA_DIR` | Data folder (same as `--data`) |
+| `CREATOR_KEY` | The key for the window and controls |
+| `WAIT_FOR_WORLD=1` | If the data folder is empty, wait for a world to be brought here instead of creating one |
+
+Only one process may keep a world: a lock file in the data folder makes a second one wait until the first has saved and let go. A world is moved between machines by uploading its save to an empty server (`POST /api/admin/adopt`), which refuses whenever a world already lives there. `GET /api/admin/save` downloads the world as it is that moment.
+
+On Railway the world runs from the `Dockerfile` with a volume mounted at `/data`.
+
 ## Build order
 
 1. **Simulation core: grid, time, save/load** ✅
@@ -57,7 +74,7 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
    - 5d. **Skill and teaching** ✅
    - 5e. **Emergent language** ✅
    - 5f. **Conflict** ✅
-6. Server deployment (24/7)
+6. **Server deployment (24/7)** ✅
 7. 3D viewer, speed controls, AI inspector, chronicle
 8. Creator panel
 
@@ -70,8 +87,10 @@ src/materials/ material properties, placement in the world, regrowth
 src/building/  structures: walls, roofs, shelter, weathering
 src/items/     made things: the hidden crafting rules, wear, items on the ground
 src/world/     endless chunked grid, world generation, grid upkeep
-src/persist/   saving, loading, backups
+src/persist/   saving, loading, backups, the one-keeper lock
+src/server/    the world's window: web API, live stream, status page
 src/inspect.ts text descriptions of AIs
+src/status.ts  the world's vital signs
 src/main.ts    entry point
 test/          tests
 ```
