@@ -7,8 +7,8 @@
 //
 // Public (read-only):
 //   GET  /health                         alive? (for the host's health check)
-//   GET  /                               status page
-//   GET  /view                           the 3D viewer (files under /viewer/)
+//   GET  /  (or /view)                   the 3D viewer (files under /viewer/)
+//   GET  /status                         plain status page with the creator's controls
 //   GET  /api/status                     date, population, speed, performance
 //   GET  /api/chronicle?since=&limit=    history entries after an id
 //   GET  /api/ais                        every living AI, one summary each
@@ -149,7 +149,7 @@ export class WorldServer {
       json(res, 200, { ok: true, state: this.state, tick: w?.tick ?? null, generation: w?.meta.generation ?? null });
       return;
     }
-    if (path === "/" && method === "GET") {
+    if (path === "/status" && method === "GET") {
       res.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
@@ -158,8 +158,8 @@ export class WorldServer {
       res.end(STATUS_PAGE);
       return;
     }
-    if ((path === "/view" || path.startsWith("/viewer/")) && method === "GET") {
-      const file = this.viewer.get(path === "/view" ? "index.html" : path.slice("/viewer/".length));
+    if ((path === "/" || path === "/view" || path.startsWith("/viewer/")) && method === "GET") {
+      const file = this.viewer.get(path === "/" || path === "/view" ? "index.html" : path.slice("/viewer/".length));
       if (!file) return json(res, 404, { error: "not found" });
       res.writeHead(200, {
         "Content-Type": file.type,

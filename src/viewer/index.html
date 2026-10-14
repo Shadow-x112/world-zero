@@ -17,22 +17,51 @@
 </script>
 </head>
 <body>
-  <canvas id="world" aria-label="The world, seen from above"></canvas>
+  <canvas id="world" aria-label="The world, seen from above. Click a figure to follow it."></canvas>
+  <div id="labels" aria-hidden="true"></div>
 
   <header class="hud hud-top">
-    <div class="brand">WORLD ZERO</div>
-    <div class="clock" id="clock">connecting…</div>
+    <div class="brand" id="brand">WORLD ZERO</div>
+    <div class="clock"><span class="season-dot" id="seasonDot"></span><span id="clock">connecting…</span></div>
     <div class="meta" id="meta"></div>
   </header>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <div class="hud hud-load" id="loading" role="status" aria-live="polite">
     <div class="load-label" id="loadLabel">Reaching the world…</div>
     <div class="load-bar"><span id="loadBar"></span></div>
   </div>
 
+  <!-- Chronicle and people -->
+  <section class="panel side" id="side" aria-label="Chronicle and people">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabChron" aria-selected="true" aria-controls="chronList">Chronicle</button>
+      <button role="tab" id="tabPeople" aria-selected="false" aria-controls="peopleList">People</button>
+      <button class="icon" id="sideClose" aria-label="Hide panel" title="Hide (C)">–</button>
+    </div>
+    <ol class="list" id="chronList" role="tabpanel" aria-labelledby="tabChron"></ol>
+    <ol class="list hidden" id="peopleList" role="tabpanel" aria-labelledby="tabPeople"></ol>
+  </section>
+  <button class="panel side-open hidden" id="sideOpen" aria-label="Show chronicle">Chronicle</button>
+
+  <!-- Inspector -->
+  <aside class="panel inspector hidden" id="inspector" aria-label="The AI you are following">
+    <div class="insp-head">
+      <button class="icon" id="prevAi" aria-label="Previous AI" title="Previous ([)">‹</button>
+      <div class="insp-title">
+        <div class="insp-name" id="inspName"></div>
+        <div class="insp-sub" id="inspSub"></div>
+      </div>
+      <button class="icon" id="nextAi" aria-label="Next AI" title="Next (])">›</button>
+      <button class="icon" id="inspClose" aria-label="Stop following" title="Stop following (Esc)">×</button>
+    </div>
+    <div class="insp-body" id="inspBody"></div>
+  </aside>
+
   <footer class="hud hud-bottom" id="hint">
-    <span class="hint-mouse">drag to move · right-drag to turn · scroll to zoom · WASD / QE</span>
-    <span class="hint-touch">one finger to move · two to turn and zoom</span>
+    <span class="hint-mouse">click a figure to follow · drag to move · right-drag to turn · scroll to zoom</span>
+    <span class="hint-touch">tap a figure to follow · one finger to move · two to turn and zoom</span>
   </footer>
 
   <div class="hud hud-quality" id="quality" title="Rendering quality (adjusts itself)"></div>

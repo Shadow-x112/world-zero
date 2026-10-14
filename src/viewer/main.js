@@ -12,6 +12,7 @@ import { Terrain } from "./terrain.js";
 import { Sky } from "./sky.js";
 import { Quality } from "./quality.js";
 import { Walkers } from "./figures.js";
+import { Ui } from "./ui.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("world");
@@ -44,6 +45,7 @@ controls.target.set(0, 0, 0);
 const terrain = new Terrain(scene);
 const sky = new Sky(scene, terrain);
 const walkers = new Walkers(scene, terrain);
+const ui = new Ui({ camera, controls, walkers, terrain, api, canvas });
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -76,6 +78,7 @@ function resize() {
   bloom.resolution.set(Math.max(64, w * quality.tier.bloomScale), Math.max(64, h * quality.tier.bloomScale));
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  if (typeof ui !== "undefined") ui.applyViewShift();
 }
 window.addEventListener("resize", resize);
 applyQuality();
@@ -211,6 +214,7 @@ async function refreshStatus() {
   try {
     const s = await api.status();
     sky.setWorld(s);
+    document.documentElement.style.setProperty("--season", `#${sky.targetLine.getHexString()}`);
     $("clock").textContent = s.date.replace(/\s*\((day|night)\)$/, "");
     const parts = [`${s.alive} alive`];
     if (s.name) parts.unshift(s.name[0].toUpperCase() + s.name.slice(1));
@@ -219,7 +223,10 @@ async function refreshStatus() {
     if (s.paused) parts.push("time paused");
     else if (s.speed > 1) parts.push(`${s.speed}× speed`);
     $("meta").textContent = parts.join(" · ");
-    api.ais().then((r) => walkers.setMates(r.ais)).catch(() => {});
+    api.ais().then((r) => {
+      walkers.setMates(r.ais);
+      ui.setPeople(r.ais);
+    }).catch(() => {});
   } catch (err) {
     if (err.status === 503) $("clock").textContent = "waiting for the world…";
   }
@@ -245,6 +252,7 @@ follow({
   },
   onChanges(c) {
     walkers.changes(c);
+    if (c.chronicle.length) ui.addChronicle(c.chronicle, true);
     if (c.chunks) want(c.chunks);
   },
   onState(state) {
@@ -255,6 +263,7 @@ follow({
 api.palette().then((p) => terrain.setPalette(p.materials)).catch(() => {});
 refreshStatus();
 setInterval(refreshStatus, 15000);
+ui.loadChronicle();
 
 // ---------- Frame loop ----------
 
@@ -262,8 +271,9 @@ const clock = new THREE.Clock();
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.1);
   keyboard(dt);
+  const steering = ui.update(performance.now());
   controls.update();
-  clampTarget();
+  if (!steering) clampTarget();
   const building = terrain.update() > 0 || wanted.size > 0 || fetching;
   sky.update(dt);
   // Far away, figures grow a little so they stay findable (up to 3x at the widest view).
@@ -277,4 +287,4 @@ function frame() {
 requestAnimationFrame(frame);
 
 // For poking at in the browser console.
-window.worldZero = { scene, camera, controls, terrain, sky, walkers, quality };
+window.worldZero = { scene, camera, controls, terrain, sky, walkers, quality, ui };

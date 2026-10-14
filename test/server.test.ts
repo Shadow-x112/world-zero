@@ -93,7 +93,8 @@ test("anyone may watch; the seed and the creator's doors need the key", async ()
     const health = JSON.parse((await call(port, "GET", "/health")).body);
     assert.equal(health.state, "running");
     assert.equal(health.tick, world.tick);
-    assert.equal((await call(port, "GET", "/")).status, 200, "the status page is public");
+    assert.equal((await call(port, "GET", "/status")).status, 200, "the status page is public");
+    assert.match((await call(port, "GET", "/")).body, /importmap/, "and the front door is the 3D world");
 
     const pub = JSON.parse((await call(port, "GET", "/api/status")).body);
     assert.equal(pub.worldId, world.meta.id, "anyone can see the world");
@@ -424,7 +425,7 @@ test("the viewer's files are served, and only them", async () => {
     assert.match(page.body, /importmap/);
     assert.match(String(page.headers["content-security-policy"]), /cdn\.jsdelivr\.net/, "Three.js may come from its pinned CDN");
     assert.match(page.body, /three@\d+\.\d+\.\d+/, "and its version is pinned");
-    for (const f of ["main.js", "terrain.js", "api.js", "sky.js", "quality.js", "figures.js", "viewer.css"]) {
+    for (const f of ["main.js", "terrain.js", "api.js", "sky.js", "quality.js", "figures.js", "ui.js", "viewer.css"]) {
       const r = await call(port, "GET", `/viewer/${f}`);
       assert.equal(r.status, 200, f);
     }

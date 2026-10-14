@@ -48,6 +48,8 @@ export const api = {
   palette: () => getJson("/api/palette"),
   chunkIndex: () => getJson("/api/chunks"),
   ais: () => getJson("/api/ais"),
+  ai: (id) => getJson(`/api/ai/${id}`),
+  chronicle: (since, limit) => getJson(`/api/chronicle?since=${since}&limit=${limit}`),
 
   /** Fetches chunks in batches of up to 64; calls onBatch with each decoded batch. */
   async chunks(list, onBatch) {

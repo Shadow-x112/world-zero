@@ -29,6 +29,14 @@ const ACCENT = {
   sleep: [0.08, 0.14, 0.22],
   "": [0.25, 0.45, 0.6],
 };
+/** The accent of an action as a CSS color (for the interface). */
+export function accentCss(action) {
+  const a = ACCENT[action] ?? ACCENT[""];
+  const m = Math.max(a[0], a[1], a[2], 1e-6);
+  const c = (v) => Math.round(Math.min(1, (v / m) * 0.95 + 0.05) * 255);
+  return `rgb(${c(a[0])}, ${c(a[1])}, ${c(a[2])})`;
+}
+
 const RIM = new THREE.Color(0.55, 1.5, 1.9);
 const RIM_ASLEEP = new THREE.Color(0.1, 0.22, 0.32);
 const CARRY = new THREE.Color(1.3, 1.15, 0.8);
@@ -185,6 +193,7 @@ export class Walkers {
 
   /** zoom: how far the camera is, as a size boost so figures stay findable from high up. */
   update(now, zoom = 1) {
+    this.zoom = zoom;
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     const o = this.o;
