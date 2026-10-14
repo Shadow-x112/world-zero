@@ -9,6 +9,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 import { api, follow, CHUNK } from "./api.js";
 import { Terrain } from "./terrain.js";
+import { Resources } from "./resources.js";
 import { Sky } from "./sky.js";
 import { Quality } from "./quality.js";
 import { Walkers } from "./figures.js";
@@ -47,6 +48,7 @@ controls.target.set(0, 0, 0);
 
 const terrain = new Terrain(scene);
 const sky = new Sky(scene, terrain);
+const resources = new Resources(scene, terrain);
 const walkers = new Walkers(scene, terrain);
 const ui = new Ui({ camera, controls, walkers, terrain, api, canvas });
 const fires = new Fires(scene, terrain);
@@ -56,7 +58,7 @@ const pulse = new SeasonPulse(terrain.material);
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 // Only the bright lines bloom: the dark ground stays dark.
-const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.85, 0.45, 0.32);
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.35, 0.3);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
@@ -240,6 +242,7 @@ async function refreshStatus() {
     sky.setWorld(s);
     document.documentElement.style.setProperty("--season", `#${sky.targetLine.getHexString()}`);
     snow.setWinter(s.season, s.winter);
+    resources.setSeason(s.season);
     if (lastSeason !== null && lastSeason !== s.season) seasonTurned(s);
     lastSeason = s.season;
     $("clock").textContent = s.date.replace(/\s*\((day|night)\)$/, "");
@@ -296,6 +299,40 @@ ui.loadChronicle();
 const creator = new Creator({ scene, walkers, ui, stream, camera, terrain, canvas });
 ui.creator = creator;
 
+// ---------- Light on the ground: the AIs nearest the eye ----------
+
+const lightPoints = [];
+function groundLights() {
+  lightPoints.length = 0;
+  const t = controls.target;
+  for (const w of walkers.list.values()) {
+    if (w.dx === undefined) continue;
+    const d = (w.dx - t.x) ** 2 + (w.dy - t.z) ** 2;
+    lightPoints.push({ x: w.dx, z: w.dy, w: w.a === "sleep" ? 0.3 : w.k ? 0.6 : 1, d });
+  }
+  lightPoints.sort((a, b) => a.d - b.d);
+  lightPoints.length = Math.min(lightPoints.length, quality.tier.lights);
+  terrain.setLights(lightPoints);
+}
+
+// ---------- Near ground, refreshed now and then ----------
+// How much is left on a tile changes quietly (it does not mark the chunk as changed),
+// so the ground near the eye is fetched again every so often to keep it true.
+
+setInterval(async () => {
+  if (document.hidden || fetching || !boot) return;
+  const r = Math.ceil(Resources.rangeFor(camera.position.distanceTo(controls.target), quality.tier.near) / CHUNK);
+  const fcx = Math.floor(controls.target.x / CHUNK), fcy = Math.floor(controls.target.z / CHUNK);
+  const list = [];
+  for (let cy = fcy - r; cy <= fcy + r; cy++) for (let cx = fcx - r; cx <= fcx + r; cx++) if (terrain.has(cx, cy)) list.push([cx, cy]);
+  list.sort((a, b) => dist2(a, { x: controls.target.x, z: controls.target.z }) - dist2(b, { x: controls.target.x, z: controls.target.z }));
+  try {
+    await api.chunks(list.slice(0, 64), (chunks) => {
+      for (const c of chunks) terrain.set(c);
+    });
+  } catch {}
+}, 45_000);
+
 // ---------- Frame loop ----------
 
 const clock = new THREE.Clock();
@@ -307,9 +344,12 @@ function frame() {
   if (!steering) clampTarget();
   const building = terrain.update() > 0 || wanted.size > 0 || fetching;
   sky.update(dt);
+  sky.dome.position.copy(camera.position);
   // Far away, figures grow a little so they stay findable (up to 3x at the widest view).
   const camDist = camera.position.distanceTo(controls.target);
   walkers.update(performance.now(), THREE.MathUtils.clamp(camDist / 70, 1, 3));
+  resources.update(dt, controls.target, camDist, quality.tier.near);
+  groundLights();
   terrain.material.uniforms.uTime.value += dt;
   const t = terrain.material.uniforms.uTime.value;
   fires.update(t);
@@ -331,4 +371,4 @@ function frame() {
 requestAnimationFrame(frame);
 
 // For poking at in the browser console.
-window.worldZero = { scene, camera, controls, terrain, sky, walkers, quality, ui, fires, snow, pulse, seasonTurned, creator };
+window.worldZero = { scene, camera, controls, terrain, resources, sky, walkers, quality, ui, fires, snow, pulse, seasonTurned, creator };

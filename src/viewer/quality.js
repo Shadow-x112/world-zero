@@ -3,9 +3,9 @@
 // within a visit (flip-flopping is worse than a steady, slightly plainer picture).
 
 export const TIERS = [
-  { name: "high", pixelRatio: 2, bloom: true, bloomScale: 1 },
-  { name: "medium", pixelRatio: 1.5, bloom: true, bloomScale: 0.5 },
-  { name: "low", pixelRatio: 1, bloom: false, bloomScale: 0 },
+  { name: "high", pixelRatio: 2, bloom: true, bloomScale: 1, near: 1, lights: 24 },
+  { name: "medium", pixelRatio: 1.5, bloom: true, bloomScale: 0.5, near: 0.7, lights: 16 },
+  { name: "low", pixelRatio: 1, bloom: false, bloomScale: 0, near: 0.5, lights: 8 },
 ];
 
 export class Quality {
