@@ -69,6 +69,21 @@ export const api = {
   ai: (id) => getJson(`/api/ai/${id}`),
   chronicle: (since, limit) => getJson(`/api/chronicle?since=${since}&limit=${limit}`),
   creator: (what) => getJson(`/api/creator/${what}`),
+  /** A creator action (or its preview). Resolves to the reply; rejects with the server's reason. */
+  async creatorPost(what, body) {
+    const res = await fetch(`/api/creator/${what}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${creatorKey}` },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error || `${what}: ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  },
 
   /** Fetches chunks in batches of up to 64; calls onBatch with each decoded batch. */
   async chunks(list, onBatch) {

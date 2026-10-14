@@ -50,6 +50,18 @@
     <div class="load-bar"><span id="loadBar"></span></div>
   </div>
 
+  <!-- Confirming an act -->
+  <div class="panel act-dialog hidden" id="actDialog" role="alertdialog" aria-modal="true" aria-labelledby="actTitle" aria-describedby="actLines">
+    <h2 id="actTitle"></h2>
+    <ul id="actLines"></ul>
+    <p class="dim small" id="actNote"></p>
+    <div class="act-row">
+      <button type="button" class="btn ghost" id="actCancel">Cancel</button>
+      <button type="button" class="btn" id="actGo"></button>
+    </div>
+  </div>
+  <div class="creator-toast" id="creatorToast" role="status" aria-live="polite"></div>
+
   <!-- Chronicle and people -->
   <section class="panel side" id="side" aria-label="Chronicle and people">
     <div class="tabs" role="tablist">

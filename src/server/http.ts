@@ -20,6 +20,9 @@
 //   GET  /api/stream                     live changes (Server-Sent Events), limited watchers
 // Creator only:
 //   GET  /api/creator/overview | web | families | words | history | ai/<id>   hidden truths
+//   GET  /api/creator/log                the private record of every act
+//   POST /api/creator/act                {"kind", "params", "confirm"?}: without confirm, a preview
+//   POST /api/creator/undo               {"id", "confirm"?}: put back the moment before the last act
 //   GET  /api/materials                  every material's true properties (also in /api/palette)
 //   POST /api/control                    {"action":"pause"|"resume"|"speed"|"save"|"backup", "speed"?: n}
 //   GET  /api/admin/save                 download the world as it is this moment (.json.gz)
@@ -40,6 +43,7 @@ import { chunkIndex, encodeChunk, fullPalette, publicPalette } from "./terrain.t
 import { RateLimiter } from "./limits.ts";
 import { ViewerFiles } from "./static.ts";
 import * as creatorViews from "./creator.ts";
+import { ActError, type Desk } from "../creator/desk.ts";
 
 /** Largest save the adopt endpoint accepts (compressed). */
 export const MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
@@ -74,6 +78,8 @@ export interface WorldServerOptions {
   log?: (line: string) => void;
   /** Most public watchers of the live stream at once. */
   maxWatchers?: number;
+  /** The creator's desk (acts, undo, the private log). */
+  desk?: Desk;
   /** Requests per second (and burst) allowed to one visitor without the key. */
   rate?: { perSecond: number; burst: number };
 }
@@ -90,12 +96,16 @@ export class WorldServer {
   readonly maxWatchers: number;
 
   constructor(opts: WorldServerOptions) {
+    this.desk = opts.desk;
     if (!opts.key || opts.key.length < 16) throw new Error("The creator key must be at least 16 characters");
     this.opts = opts;
     this.keyHash = hash(opts.key);
     this.maxWatchers = opts.maxWatchers ?? DEFAULT_MAX_WATCHERS;
     this.limiter = new RateLimiter(opts.rate?.perSecond ?? 20, opts.rate?.burst ?? 200);
   }
+
+  /** The creator's desk, once the world is here. */
+  desk?: Desk;
 
   /** The world is here and running: start serving it. */
   attach(runner: Runner): void {
@@ -202,6 +212,8 @@ export class WorldServer {
           return send(200, creatorViews.words(w));
         case "history":
           return send(200, creatorViews.history(w));
+        case "log":
+          return send(200, { entries: this.desk?.log() ?? [] });
       }
       const m = what.match(/^ai\/(\d+)$/);
       if (m) {
@@ -278,6 +290,34 @@ export class WorldServer {
         if (body) return send(200, { alive: false, id, cause: body.cause, ageDays: body.ageDays });
         return json(res, 404, { error: `no AI #${id}` });
       }
+    }
+
+    if (path.startsWith("/api/creator/") && method === "POST") {
+      if (!creator) return needKey();
+      const desk = this.desk;
+      if (!desk) return json(res, 503, { error: "the creator's desk is not open" });
+      const body = await readJson(req, 16384);
+      try {
+        if (path === "/api/creator/act") {
+          const kind = String(body?.kind ?? "");
+          const params = (body?.params && typeof body.params === "object" ? body.params : {}) as Record<string, unknown>;
+          if (body?.confirm !== true) return json(res, 200, { preview: desk.preview(kind, params) });
+          const entry = await desk.perform(kind, params);
+          this.opts.log?.(`Creator act #${entry.id}: ${entry.summary}`);
+          return json(res, 200, { ok: true, entry });
+        }
+        if (path === "/api/creator/undo") {
+          const id = Number(body?.id);
+          if (body?.confirm !== true) return json(res, 200, { preview: desk.undoPreview(id) });
+          const entry = await desk.undo(id);
+          this.opts.log?.(`Creator: ${entry.summary}`);
+          return json(res, 200, { ok: true, entry });
+        }
+      } catch (err) {
+        if (err instanceof ActError) return json(res, err.status, { error: err.message });
+        throw err;
+      }
+      return json(res, 404, { error: "not found" });
     }
 
     if (path === "/api/control" && method === "POST") {

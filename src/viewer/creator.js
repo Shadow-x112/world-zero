@@ -35,6 +35,14 @@ export class Creator {
       if (k) this.unlock(k, false);
     });
     $("creatorLock").addEventListener("click", () => this.lock());
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        $("keyDialog").classList.add("hidden");
+        this.closeDialog(false);
+      }
+    });
+    // The undo countdown ticks down in place.
+    setInterval(() => this.tickLog(), 1000);
     $("webToggle").addEventListener("change", (e) => {
       this.showWeb = e.target.checked;
       this.web.lines.visible = this.showWeb;
@@ -82,8 +90,9 @@ export class Creator {
   async refresh() {
     if (!this.on) return;
     try {
-      const [overview, history, words, families] = await Promise.all(["overview", "history", "words", "families"].map((w) => api.creator(w)));
-      Object.assign(this.data, { overview, history, words, families });
+      const [overview, history, words, families, log] = await Promise.all(["overview", "history", "words", "families", "log"].map((w) => api.creator(w)));
+      Object.assign(this.data, { overview, history, words, families, log });
+      this.logLoadedAt = performance.now();
       this.render();
       if (this.showWeb) this.loadWeb();
     } catch (err) {
@@ -110,6 +119,8 @@ export class Creator {
       .map((x) => `<li><span>year ${x.year}</span><b class="w-${x.kind}">${x.kind}</b><span class="dim">${x.severity.toFixed(2)}×</span></li>`)
       .join("");
     $("creatorBody").innerHTML = `
+      <h3>Your acts</h3>
+      ${this.renderLog()}
       <h3>The world</h3>
       <div class="kv"><span>seed</span><b>${o.seed}</b><span>generation</span><b>${o.generation}</b><span>day</span><b>${o.day}</b><span>ground seen</span><b>${o.explored} chunks</b></div>
       <h3>Winters to come</h3>
@@ -132,6 +143,133 @@ export class Creator {
       $("webToggle").dispatchEvent(new Event("change"));
     });
     renderCharts($("charts"), h.days);
+    this.bindLog();
+  }
+
+  // ---------- The private log, with undo ----------
+
+  renderLog() {
+    const entries = this.data.log?.entries ?? [];
+    if (!entries.length) return `<p class="dim small">Nothing done yet. Every act is kept here, and the last one can be undone for ten minutes.</p>`;
+    return `<ul class="act-log">${entries
+      .slice(0, 30)
+      .map(
+        (e) => `<li>
+          <span class="when">${esc(e.when.replace(/\s*\((day|night)\)$/, ""))} · ${new Date(e.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+          <span class="${e.undone ? "undone" : ""}">${esc(e.summary)}${e.nature ? `<br><span class="dim small">told: “${esc(e.nature)}”</span>` : ""}</span>
+          ${e.undoableFor > 0 && !e.undone ? `<button class="btn" data-undo="${e.id}">undo <span data-left="${e.id}"></span></button>` : ""}
+        </li>`,
+      )
+      .join("")}</ul>`;
+  }
+
+  bindLog() {
+    document.querySelectorAll("#creatorBody [data-undo]").forEach((b) => b.addEventListener("click", () => this.undo(Number(b.dataset.undo))));
+    this.tickLog();
+  }
+
+  /** Counts the undo window down without asking the server every second. */
+  tickLog() {
+    const entries = this.data.log?.entries;
+    if (!entries || !this.on) return;
+    const passed = performance.now() - (this.logLoadedAt ?? 0);
+    for (const e of entries) {
+      const el = document.querySelector(`#creatorBody [data-left="${e.id}"]`);
+      if (!el) continue;
+      const left = e.undoableFor - passed;
+      if (left <= 0) {
+        el.closest("button")?.remove();
+        continue;
+      }
+      const m = Math.floor(left / 60000), sec = Math.floor((left % 60000) / 1000);
+      el.textContent = `${m}:${String(sec).padStart(2, "0")}`;
+    }
+  }
+
+  // ---------- Doing things: preview, confirm, act ----------
+
+  /** Shows what will happen and waits for a yes or no. Grave acts need two steps. */
+  confirmDialog({ title, lines, note, grave, go }) {
+    const d = $("actDialog");
+    $("actTitle").textContent = title;
+    $("actLines").innerHTML = lines.map((l) => `<li>${esc(l)}</li>`).join("");
+    $("actNote").textContent = note ?? "";
+    d.classList.toggle("grave", !!grave);
+    const btn = $("actGo");
+    btn.className = `btn ${grave ? "danger" : "go"}`;
+    btn.textContent = grave ? "I understand" : go;
+    d.classList.remove("hidden");
+    btn.focus();
+    return new Promise((resolve) => {
+      let armed = !grave;
+      this.closeDialog = (answer) => {
+        d.classList.add("hidden");
+        this.closeDialog = () => {};
+        resolve(answer);
+      };
+      btn.onclick = () => {
+        if (!armed) {
+          armed = true;
+          btn.textContent = go;
+          return;
+        }
+        this.closeDialog(true);
+      };
+      $("actCancel").onclick = () => this.closeDialog(false);
+    });
+  }
+
+  closeDialog() {}
+
+  toast(text, bad = false) {
+    const t = $("creatorToast");
+    t.textContent = text;
+    t.classList.toggle("bad", bad);
+    t.classList.add("show");
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => t.classList.remove("show"), 4500);
+  }
+
+  /** Any act, the same way: preview, confirm, do, report. */
+  async act(kind, params) {
+    try {
+      const { preview } = await api.creatorPost("act", { kind, params });
+      const yes = await this.confirmDialog({
+        title: preview.title,
+        lines: preview.lines,
+        note: `A snapshot is taken first: you can undo this for ${preview.undoMinutes} minutes.`,
+        grave: preview.grave,
+        go: "Do it",
+      });
+      if (!yes) return null;
+      const { entry } = await api.creatorPost("act", { kind, params, confirm: true });
+      this.toast(entry.summary);
+      await this.refresh();
+      return entry;
+    } catch (err) {
+      this.toast(err.message, true);
+      return null;
+    }
+  }
+
+  async undo(id) {
+    try {
+      const { preview } = await api.creatorPost("undo", { id });
+      const lost = preview.lostMinutes >= 120 ? `${(preview.lostMinutes / 60).toFixed(1)} hours` : preview.lostMinutes < 1 ? "less than a minute" : preview.lostMinutes === 1 ? "1 minute" : `${preview.lostMinutes} minutes`;
+      const yes = await this.confirmDialog({
+        title: "Undo",
+        lines: [`The world goes back to the moment before: ${preview.summary}`, `Everything that happened since (${lost} of world time) is undone with it.`],
+        note: "Undo is one step only: after this, nothing earlier can be undone.",
+        grave: true,
+        go: "Undo it",
+      });
+      if (!yes) return;
+      await api.creatorPost("undo", { id, confirm: true });
+      this.toast("Undone. The world is as it was.");
+      await this.refresh();
+    } catch (err) {
+      this.toast(err.message, true);
+    }
   }
 
   renderWords(w) {
@@ -207,6 +345,8 @@ export class Creator {
     const grudges = h.grudges.length ? h.grudges.map((g) => `<li><span class="link" data-ai="${g.id}">${label(g.id)}</span> <span class="dim">${g.strength.toFixed(2)}</span></li>`).join("") : `<li class="dim">none</li>`;
     return `
       <div class="hidden-block">
+        <h3>Creator</h3>
+        <div class="creator-acts"><button class="btn" data-act="heal" data-id="${h.id}">Heal</button></div>
         <h3>Hidden · life</h3>
         <div class="kv"><span>lived</span><b>${pct(h.lifeFraction)} of its span</b><span>days left</span><b>about ${h.daysLeft}</b><span>poison</span><b>${h.toxin.toFixed(2)}</b><span>parents</span><b>${h.parents ? h.parents.map(label).join(" & ") : "none (a founder)"}</b></div>
         <h3>Hidden · nature</h3><div class="bars">${list(h.personality, true)}</div>

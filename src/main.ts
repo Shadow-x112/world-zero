@@ -32,6 +32,7 @@ import { WorldLock } from "./persist/lock.ts";
 import { lexiconReport } from "./agents/language.ts";
 import { statusLine } from "./status.ts";
 import { WorldServer } from "./server/http.ts";
+import { Desk } from "./creator/desk.ts";
 
 const AUTOSAVE_SECONDS = 60;
 const BACKUP_SECONDS = 60 * 60;
@@ -234,6 +235,23 @@ async function main(): Promise<void> {
   console.log(statusLine(runner));
   console.log('Running. Type "help" for commands.');
   runner.start();
+  if (server) {
+    // The creator's desk: every act through one door, with a snapshot to undo it.
+    const desk = new Desk({
+      store,
+      world: () => runner.world,
+      speed: () => runner.speed,
+      replaceWorld: (next, nextSpeed) => {
+        runner.setWorld(next);
+        if (isSpeed(nextSpeed)) runner.setSpeed(nextSpeed);
+        printedChronicle = next.chronicle.size;
+        server!.hub.resync(next);
+      },
+      save: () => doSave(""),
+    });
+    await desk.load();
+    server.desk = desk;
+  }
   server?.attach(runner);
 
   let shuttingDown = false;

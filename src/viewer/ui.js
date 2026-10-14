@@ -303,6 +303,12 @@ export class Ui {
         if (!html || this.selected !== a.id) return;
         body.insertAdjacentHTML("beforeend", html);
         body.querySelectorAll(".hidden-block [data-ai]").forEach((el) => el.addEventListener("click", () => this.select(Number(el.dataset.ai))));
+        body.querySelectorAll(".hidden-block [data-act]").forEach((el) =>
+          el.addEventListener("click", async () => {
+            await this.creator.act(el.dataset.act, { id: Number(el.dataset.id) });
+            this.loadInspector(false);
+          }),
+        );
         body.scrollTop = keep;
       });
     }

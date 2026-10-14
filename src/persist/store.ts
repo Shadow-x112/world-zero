@@ -471,6 +471,26 @@ export class Store {
     return { world, speed };
   }
 
+  /** Snapshots taken just before each creator act (kept apart from regular backups). */
+  get actsDir(): string {
+    return join(this.dir, "acts");
+  }
+
+  /** Writes a snapshot of the world before a creator act; keeps the newest `keep`. */
+  async actSnapshot(world: World, speed: number, actId: number, keep = 60): Promise<string> {
+    await mkdir(this.actsDir, { recursive: true });
+    const path = join(this.actsDir, `act-${String(actId).padStart(6, "0")}-${stamp()}.json.gz`);
+    await writeAtomic(path, await gzipAsync(Buffer.from(JSON.stringify(serializeWorld(world, speed)))));
+    const names = (await readdir(this.actsDir)).filter((n) => n.startsWith("act-") && n.endsWith(".json.gz")).sort();
+    for (const n of names.slice(0, Math.max(0, names.length - keep))) await rm(join(this.actsDir, n), { force: true });
+    return path;
+  }
+
+  /** Reads any save file back into a world (for undoing a creator act). */
+  async loadFile(path: string): Promise<{ world: World; speed: number }> {
+    return deserializeWorld(await readSave(path));
+  }
+
   /** Loads the newest readable save: current, then previous, then backups. */
   async load(): Promise<{ world: World; speed: number; source: string } | null> {
     const candidates = [this.currentPath, this.previousPath, ...(await this.listBackups()).reverse()];

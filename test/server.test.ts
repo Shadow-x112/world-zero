@@ -12,6 +12,7 @@ import { WorldLock, LOCK_STALE_MS } from "../src/persist/lock.ts";
 import { WorldServer, parseChunkList } from "../src/server/http.ts";
 import { StreamHub } from "../src/server/stream.ts";
 import { igniteAt } from "../src/world/fire.ts";
+import { Desk } from "../src/creator/desk.ts";
 
 const KEY = "a-test-creator-key-0123456789";
 
@@ -472,5 +473,55 @@ test("the creator's view: hidden truths behind the key, and only reading", async
     assert.equal(JSON.stringify({ ...serializeWorld(world, 1), savedAt: "" }), before, "looking changed nothing");
   } finally {
     await server.close();
+  }
+});
+
+test("the creator's desk over the wire: preview, act, undo; never without the key", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "world-zero-deskhttp-"));
+  const world = World.create({ seed: 316 });
+  const runner = new Runner(world, 1);
+  const store = new Store(dir);
+  await store.ensureDirs();
+  const desk = new Desk({
+    store,
+    world: () => runner.world,
+    speed: () => runner.speed,
+    replaceWorld: (w) => {
+      runner.setWorld(w);
+      server.hub.resync(w);
+    },
+    save: () => store.save(runner.world, runner.speed),
+  });
+  const server = new WorldServer({
+    key: KEY, desk,
+    save: async () => {}, backup: async () => "", exportSave: async () => Buffer.alloc(0), adopt: async () => ({ worldId: "", tick: 0 }),
+  });
+  const port = await server.listen(0, "127.0.0.1");
+  server.attach(runner);
+  try {
+    const a = world.population.list()[0];
+    a.health = 0.25;
+    const post = (path: string, body: unknown, key?: string) => call(port, "POST", path, { key, body: JSON.stringify(body) });
+    assert.equal((await post("/api/creator/act", { kind: "heal", params: { id: a.id }, confirm: true })).status, 401, "no key, no act");
+    assert.equal(a.health, 0.25);
+    const preview = JSON.parse((await post("/api/creator/act", { kind: "heal", params: { id: a.id } }, KEY)).body).preview;
+    assert.equal(preview.title, "Heal");
+    assert.equal(a.health, 0.25, "a preview changes nothing");
+    const done = JSON.parse((await post("/api/creator/act", { kind: "heal", params: { id: a.id }, confirm: true }, KEY)).body);
+    assert.equal(done.ok, true);
+    assert.equal(runner.world.population.get(a.id)!.health, 1);
+    const log = JSON.parse((await call(port, "GET", "/api/creator/log", { key: KEY })).body).entries;
+    assert.equal(log[0].kind, "heal");
+    assert.ok(log[0].undoableFor > 0);
+    assert.equal((await call(port, "GET", "/api/creator/log")).status, 401);
+    const bootBefore = server.hub.boot;
+    const undone = JSON.parse((await post("/api/creator/undo", { id: done.entry.id, confirm: true }, KEY)).body);
+    assert.equal(undone.ok, true);
+    assert.equal(runner.world.population.get(a.id)!.health, 0.25, "put back as it was");
+    assert.notEqual(server.hub.boot, bootBefore, "watchers are told to start over");
+    assert.equal((await post("/api/creator/act", { kind: "smite", params: {} }, KEY)).status, 400);
+  } finally {
+    await server.close();
+    await rm(dir, { recursive: true, force: true });
   }
 });

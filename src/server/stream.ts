@@ -57,7 +57,7 @@ export class StreamHub {
   /** Every chunk watchers have been told exists. */
   private known = new Set<string>();
   private readonly now: () => number;
-  readonly boot: string;
+  boot: string;
 
   constructor(now: () => number = () => Date.now(), boot: string = randomUUID()) {
     this.now = now;
@@ -114,6 +114,16 @@ export class StreamHub {
       this.lastKeepAlive = now;
       for (const c of this.clients) c.res.write(": keep-alive\n\n");
     }
+  }
+
+  /**
+   * The world was put back to an earlier moment (a creator's undo): everything a
+   * watcher holds is stale, so the run gets a new name and everyone starts over.
+   */
+  resync(world: World): void {
+    this.boot = randomUUID();
+    this.resetBaseline(world);
+    this.broadcast("snapshot", this.snapshot(world));
   }
 
   /** Sends a named event with data to every watcher. */
