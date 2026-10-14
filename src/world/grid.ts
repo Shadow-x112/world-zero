@@ -35,6 +35,13 @@ export function toLocalCoord(v: number): number {
   return ((v % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
 }
 
+/**
+ * Layers whose changes do not count as a visible revision of a chunk: they change
+ * constantly (footsteps, amounts taken and regrown, a fire's fuel) and watchers
+ * learn of them in other ways (fires are streamed; paths and amounts refresh slowly).
+ */
+export const QUIET_LAYERS = new Set(["wear", "amount", "fire"]);
+
 /** Fraction of wear kept each world day. A single pass fades within a day; regular use builds up. */
 export const WEAR_DAILY_KEEP = 0.93;
 
@@ -96,6 +103,33 @@ export class Grid {
     if (!this.loaded.has(key)) this.unloaded.set(key, code);
   }
 
+  /** Every chunk that has ever existed, loaded or not, as chunk coordinates. */
+  *knownChunks(): IterableIterator<{ cx: number; cy: number; loaded: Chunk | null }> {
+    for (const chunk of this.loaded.values()) yield { cx: chunk.cx, cy: chunk.cy, loaded: chunk };
+    for (const key of this.unloaded.keys()) {
+      yield { cx: Math.floor(key / 2097152) - 1048576, cy: (key % 2097152) - 1048576, loaded: null };
+    }
+  }
+
+  /**
+   * A chunk to look at, without disturbing the world: the live chunk if it is in
+   * memory, or a detached regeneration of an unloaded one (never inserted into the
+   * grid, so watching can never change what is simulated). Null if the chunk has
+   * never existed.
+   */
+  viewChunk(cx: number, cy: number): Chunk | null {
+    const key = Chunk.key(cx, cy);
+    const live = this.loaded.get(key);
+    if (live) return live;
+    const code = this.unloaded.get(key);
+    if (code === undefined) return null;
+    const v = splitVersionCode(code);
+    const copy = generateChunk(this.seed, cx, cy, v.terrain);
+    placeMaterials(copy, this.seed, v.material);
+    copy.dirty = false;
+    return copy;
+  }
+
   allChunks(): IterableIterator<Chunk> {
     return this.loaded.values();
   }
@@ -137,6 +171,7 @@ export class Grid {
     if (old === value) return;
     array[i] = value;
     chunk.dirty = true;
+    if (!QUIET_LAYERS.has(layer)) chunk.revision++;
     if (layer === "wear") {
       if (old === 0) chunk.wearTiles++;
       else if (value === 0) chunk.wearTiles--;

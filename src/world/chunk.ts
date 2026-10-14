@@ -82,6 +82,11 @@ export class Chunk {
   dirty = true;
   /** True once anything other than wear differs from what generation produced. */
   edited = false;
+  /**
+   * Counts changes a watcher would see (ground, materials, structures), so viewers
+   * know when to fetch a chunk again. Not saved: it restarts with the process.
+   */
+  revision = 0;
   /** Number of tiles with any wear. Wear fades, so this can return to zero. */
   wearTiles = 0;
   private terrainCache: LayerArray | null = null;

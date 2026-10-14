@@ -9,7 +9,7 @@ import { World } from "../src/core/world.ts";
 import { Runner } from "../src/core/runner.ts";
 import { Store, serializeWorld } from "../src/persist/store.ts";
 import { WorldLock, LOCK_STALE_MS } from "../src/persist/lock.ts";
-import { WorldServer } from "../src/server/http.ts";
+import { WorldServer, parseChunkList } from "../src/server/http.ts";
 import { StreamHub } from "../src/server/stream.ts";
 import { igniteAt } from "../src/world/fire.ts";
 
@@ -81,7 +81,7 @@ async function serve(world: World, extra: Partial<ConstructorParameters<typeof W
   return { server, runner, port, saves: () => saves };
 }
 
-test("the window: health is public, everything else needs the creator key", async () => {
+test("anyone may watch; the seed and the creator's doors need the key", async () => {
   const world = World.create({ seed: 301 });
   const { server, runner, port } = await serve(world);
   try {
@@ -93,14 +93,29 @@ test("the window: health is public, everything else needs the creator key", asyn
     const health = JSON.parse((await call(port, "GET", "/health")).body);
     assert.equal(health.state, "running");
     assert.equal(health.tick, world.tick);
-    assert.equal((await call(port, "GET", "/")).status, 200, "the status page itself is public (it asks for the key)");
-    assert.equal((await call(port, "GET", "/api/status")).status, 401, "no key, no view");
-    assert.equal((await call(port, "GET", "/api/status", { key: "wrong-key-wrong-key" })).status, 401, "wrong key, no view");
-    assert.equal((await call(port, "GET", `/api/status?key=${KEY}`)).status, 200, "the key also works in the address (for the stream)");
+    assert.equal((await call(port, "GET", "/")).status, 200, "the status page is public");
 
-    const status = JSON.parse((await call(port, "GET", "/api/status", { key: KEY })).body);
-    assert.equal(status.worldId, world.meta.id);
-    assert.equal(status.alive, world.population.count);
+    const pub = JSON.parse((await call(port, "GET", "/api/status")).body);
+    assert.equal(pub.worldId, world.meta.id, "anyone can see the world");
+    assert.equal(pub.alive, world.population.count);
+    assert.equal(pub.seed, undefined, "but not its seed, which foretells the land and the winters");
+    const mine = JSON.parse((await call(port, "GET", "/api/status", { key: KEY })).body);
+    assert.equal(mine.seed, world.meta.seed, "the creator sees it");
+    assert.equal(JSON.parse((await call(port, "GET", `/api/status?key=${KEY}`)).body).seed, world.meta.seed, "the key also works in the address");
+    assert.equal(JSON.parse((await call(port, "GET", "/api/status", { key: "wrong-key-wrong-key" })).body).seed, undefined, "a wrong key is just a watcher");
+
+    for (const door of ["/api/materials", "/api/admin/save"]) {
+      assert.equal((await call(port, "GET", door)).status, 401, door);
+      assert.equal((await call(port, "GET", door, { key: KEY })).status, 200, door);
+    }
+
+    // How materials look is public; what they truly are is not.
+    const looks = JSON.parse((await call(port, "GET", "/api/palette")).body).materials;
+    assert.ok(looks.length > 5);
+    assert.deepEqual(Object.keys(looks[0].looks).sort(), ["energy", "growth", "mass"]);
+    assert.ok(!JSON.stringify(looks).includes("nourishment") && !JSON.stringify(looks).includes("reactivity"), "no hidden properties leak");
+    const truth = JSON.parse((await call(port, "GET", "/api/palette", { key: KEY })).body).materials;
+    assert.ok("nourishment" in truth[0].props, "the creator sees everything");
   } finally {
     await server.close();
   }
@@ -168,7 +183,7 @@ test("the live stream: a snapshot first, then only what changed", async () => {
   const { server, runner, port } = await serve(world);
   server.attach(runner);
   try {
-    const pending = readStream(port, `/api/stream?key=${KEY}`, 2);
+    const pending = readStream(port, `/api/stream`, 2);
     await new Promise((r) => setTimeout(r, 100));
     // Move the world on and let the hub notice.
     for (let i = 0; i < 400; i++) world.step();
@@ -182,7 +197,8 @@ test("the live stream: a snapshot first, then only what changed", async () => {
     assert.equal(changes.event, "changes");
     assert.ok(changes.data.agents.length > 0, "someone moved");
     assert.ok(changes.data.fires.lit.some(([x, y]: number[]) => x === 5 && y === 5), "the new fire is reported");
-    assert.equal((await call(port, "GET", "/api/stream")).status, 401, "the stream needs the key too");
+    assert.equal(snap.data.boot.length > 0, true, "the snapshot names this server run");
+    assert.ok(snap.data.chunks.length > 0, "and lists the chunks");
   } finally {
     await server.close();
   }
@@ -280,4 +296,119 @@ test("the creator key must be long enough to mean something", () => {
     () => new WorldServer({ key: "short", save: async () => {}, backup: async () => "", exportSave: async () => Buffer.alloc(0), adopt: async () => ({ worldId: "", tick: 0 }) }),
     /at least 16/,
   );
+});
+
+test("the ground: every known chunk can be seen, packed small, without disturbing the world", async () => {
+  // Two identical worlds; one is watched hard, one is not. They must stay identical.
+  const watched = World.create({ seed: 310 });
+  const quiet = World.create({ seed: 310 });
+  for (let i = 0; i < 3000; i++) {
+    watched.step();
+    quiet.step();
+  }
+  // Force untouched far chunks out of memory (in both worlds alike) so the viewer must see unloaded ground too.
+  const far = (cx: number, cy: number) => Math.abs(cx) > 1 || Math.abs(cy) > 1;
+  watched.grid.unloadIdle((cx, cy) => !far(cx, cy));
+  quiet.grid.unloadIdle((cx, cy) => !far(cx, cy));
+  const unloadedBefore = watched.grid.knownChunkCount - watched.grid.chunkCount;
+  const { server, runner, port } = await serve(watched);
+  server.attach(runner);
+  try {
+    const index = JSON.parse((await call(port, "GET", "/api/chunks")).body);
+    assert.equal(index.chunks.length, watched.grid.knownChunkCount, "every chunk the world has");
+    const loadedBefore = watched.grid.chunkCount;
+    const all: Array<[number, number, number]> = index.chunks;
+    for (let i = 0; i < all.length; i += 64) {
+      const c = all.slice(i, i + 64).map(([x, y]) => `${x},${y}`).join(";");
+      const reply = JSON.parse((await call(port, "GET", `/api/chunkdata?c=${c}`)).body);
+      assert.equal(reply.missing.length, 0);
+      for (const ch of reply.chunks) {
+        assert.equal(Buffer.from(ch.height, "base64").length, 32 * 32 * 2, "heights are 2 bytes per tile");
+        assert.equal(Buffer.from(ch.terrain, "base64").length, 32 * 32, "the rest 1 byte per tile");
+      }
+    }
+    // Ground that never existed is not invented for watchers.
+    const never = JSON.parse((await call(port, "GET", "/api/chunkdata?c=9999,9999")).body);
+    assert.deepEqual(never.missing, [[9999, 9999]]);
+    assert.equal(watched.grid.chunkCount, loadedBefore, "looking loaded nothing into the world");
+    assert.ok(unloadedBefore > 0, `some ground was unloaded and still seen (${unloadedBefore} chunks)`);
+
+    for (let i = 0; i < 2000; i++) {
+      watched.step();
+      quiet.step();
+    }
+    // Everything but the two worlds' own names and birth times must match.
+    const same = (w: World) => JSON.stringify({ ...serializeWorld(w, 1), savedAt: "", meta: { ...w.meta, id: "", createdAt: "" } });
+    assert.ok(same(watched) === same(quiet), "a watched world unfolds exactly like an unwatched one");
+
+    assert.equal((await call(port, "GET", "/api/chunkdata?c=1,2;oops")).status, 400, "malformed lists are refused");
+    const tooMany = Array.from({ length: 65 }, (_, i) => `${i},0`).join(";");
+    assert.equal((await call(port, "GET", `/api/chunkdata?c=${tooMany}`)).status, 400, "and so are greedy ones");
+  } finally {
+    await server.close();
+  }
+});
+
+test("building something tells watchers which chunk to fetch again", async () => {
+  const world = World.create({ seed: 311 });
+  const hub = new StreamHub(() => 0, "boot-1");
+  const res: any = { writeHead() {}, write() {}, on() {}, end() {} };
+  hub.add(res, world);
+  assert.equal(hub.diff(world), null);
+  const before = world.grid.getChunk(0, 0).revision;
+  world.grid.set("wall", 3, 4, 4);
+  world.grid.set("wallHp", 3, 4, 1000);
+  const changes = hub.diff(world)!;
+  assert.ok(changes.chunks?.some(([cx, cy, rev]) => cx === 0 && cy === 0 && rev > before), "the built-on chunk is named");
+  // Footsteps and amounts change all the time; they are not news.
+  world.grid.set("wear", 5, 5, 9);
+  world.grid.set("amount", 6, 6, 3);
+  assert.equal(hub.diff(world)?.chunks, undefined, "quiet changes do not trigger refetches");
+});
+
+test("the window turns away watchers beyond its limit, but never the creator", async () => {
+  const world = World.create({ seed: 312 });
+  const { server, runner, port } = await serve(world, { maxWatchers: 1 });
+  server.attach(runner);
+  const open: any[] = [];
+  const connect = (path: string) =>
+    new Promise<number>((done) => {
+      const req = request({ host: "127.0.0.1", port, path }, (res) => {
+        done(res.statusCode ?? 0);
+        if (res.statusCode !== 200) res.resume();
+      });
+      open.push(req);
+      req.on("error", () => {});
+      req.end();
+    });
+  try {
+    assert.equal(await connect("/api/stream"), 200, "the first watcher is welcome");
+    assert.equal(await connect("/api/stream"), 503, "the second must wait");
+    assert.equal(await connect(`/api/stream?key=${KEY}`), 200, "the creator always gets in");
+  } finally {
+    for (const r of open) r.destroy();
+    await server.close();
+  }
+});
+
+test("one visitor cannot flood the window", async () => {
+  const world = World.create({ seed: 313 });
+  const { server, runner, port } = await serve(world, { rate: { perSecond: 1, burst: 3 } });
+  server.attach(runner);
+  try {
+    const codes = [];
+    for (let i = 0; i < 5; i++) codes.push((await call(port, "GET", "/api/status")).status);
+    assert.deepEqual(codes, [200, 200, 200, 429, 429]);
+    assert.equal((await call(port, "GET", "/api/status", { key: KEY })).status, 200, "the creator is never slowed");
+    assert.equal((await call(port, "GET", "/health")).status, 200, "the health check is never slowed");
+  } finally {
+    await server.close();
+  }
+});
+
+test("chunk lists are read strictly", () => {
+  assert.deepEqual(parseChunkList("0,0;-3,12"), [[0, 0], [-3, 12]]);
+  assert.deepEqual(parseChunkList(""), []);
+  assert.equal(parseChunkList("1,2,3"), null);
+  assert.equal(parseChunkList("a,b"), null);
 });

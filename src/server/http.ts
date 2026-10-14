@@ -1,22 +1,31 @@
 // The world's window: a small web server living in the same process as the world.
-// Built only on node:http. Everything except /health and the status page needs the
-// creator key, sent as "Authorization: Bearer <key>" or "?key=<key>" (the live
-// stream cannot send headers from a browser, so it uses the query form).
+// Built only on node:http.
 //
-//   GET  /health                 alive? (public; for the host's health check)
-//   GET  /                       status page (asks for the key, then shows the world live)
-//   GET  /api/status             date, population, speed, performance
-//   GET  /api/chronicle?since=&limit=   history entries after an id
-//   GET  /api/ais                every living AI, one summary each
-//   GET  /api/ai/<id>            everything about one AI (or how it died)
-//   GET  /api/words | shelters | items | materials    the console reports, as text
-//   GET  /api/stream             live changes (Server-Sent Events)
-//   POST /api/control            {"action":"pause"|"resume"|"speed"|"save"|"backup", "speed"?: n}
-//   GET  /api/admin/save         download the world as it is this moment (.json.gz)
-//   POST /api/admin/adopt        upload a save to bring a world here (only while waiting for one)
+// Anyone may watch. Changing anything, or seeing what is hidden (the world's seed, the
+// true nature of materials), needs the creator key, sent as "Authorization: Bearer <key>"
+// or "?key=<key>" (a browser's live stream cannot send headers, so it uses the query form).
+//
+// Public (read-only):
+//   GET  /health                         alive? (for the host's health check)
+//   GET  /                               status page
+//   GET  /api/status                     date, population, speed, performance
+//   GET  /api/chronicle?since=&limit=    history entries after an id
+//   GET  /api/ais                        every living AI, one summary each
+//   GET  /api/ai/<id>                    everything about one AI (or how it died)
+//   GET  /api/words | shelters | items   the console reports, as text
+//   GET  /api/palette                    how each material looks
+//   GET  /api/chunks                     every chunk the world has: [cx, cy, revision]
+//   GET  /api/chunkdata?c=cx,cy;cx,cy    the ground of up to 64 chunks
+//   GET  /api/stream                     live changes (Server-Sent Events), limited watchers
+// Creator only:
+//   GET  /api/materials                  every material's true properties (also in /api/palette)
+//   POST /api/control                    {"action":"pause"|"resume"|"speed"|"save"|"backup", "speed"?: n}
+//   GET  /api/admin/save                 download the world as it is this moment (.json.gz)
+//   POST /api/admin/adopt                bring a world here (only while waiting for one)
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual, createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 
 import type { Runner } from "../core/runner.ts";
 import { statusData } from "../status.ts";
@@ -25,9 +34,17 @@ import { StreamHub } from "./stream.ts";
 import { STATUS_PAGE } from "./page.ts";
 import { itemsReport, materialsTable, sheltersReport } from "../inspect.ts";
 import { lexiconReport } from "../agents/language.ts";
+import { chunkIndex, encodeChunk, fullPalette, publicPalette } from "./terrain.ts";
+import { RateLimiter } from "./limits.ts";
 
 /** Largest save the adopt endpoint accepts (compressed). */
 export const MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
+/** Default most people watching the live stream at once (the creator is never turned away). */
+export const DEFAULT_MAX_WATCHERS = 25;
+/** Most chunks one /api/chunkdata request may ask for. */
+export const MAX_CHUNKS_PER_REQUEST = 64;
+/** Responses larger than this are compressed for clients that accept it. */
+const GZIP_OVER_BYTES = 1024;
 
 export type ServerState = "waiting" | "running" | "stopping";
 
@@ -42,6 +59,10 @@ export interface WorldServerOptions {
   /** Takes in an uploaded save while no world is here yet. */
   adopt: (gz: Buffer) => Promise<{ worldId: string; tick: number }>;
   log?: (line: string) => void;
+  /** Most public watchers of the live stream at once. */
+  maxWatchers?: number;
+  /** Requests per second (and burst) allowed to one visitor without the key. */
+  rate?: { perSecond: number; burst: number };
 }
 
 export class WorldServer {
@@ -51,11 +72,15 @@ export class WorldServer {
   private server: Server | null = null;
   private readonly keyHash: Buffer;
   private readonly opts: WorldServerOptions;
+  private readonly limiter: RateLimiter;
+  readonly maxWatchers: number;
 
   constructor(opts: WorldServerOptions) {
     if (!opts.key || opts.key.length < 16) throw new Error("The creator key must be at least 16 characters");
     this.opts = opts;
     this.keyHash = hash(opts.key);
+    this.maxWatchers = opts.maxWatchers ?? DEFAULT_MAX_WATCHERS;
+    this.limiter = new RateLimiter(opts.rate?.perSecond ?? 20, opts.rate?.burst ?? 200);
   }
 
   /** The world is here and running: start serving it. */
@@ -122,9 +147,16 @@ export class WorldServer {
       return;
     }
     if (!path.startsWith("/api/")) return json(res, 404, { error: "not found" });
-    if (!this.authorized(req, url)) return json(res, 401, { error: "creator key required" });
 
-    if (path === "/api/admin/adopt" && method === "POST") return this.adopt(req, res);
+    const creator = this.authorized(req, url);
+    if (!creator && !this.limiter.allow(visitorOf(req))) {
+      res.setHeader("Retry-After", "5");
+      return json(res, 429, { error: "too many requests; slow down" });
+    }
+    const send = (status: number, data: unknown) => jsonMaybeGzip(req, res, status, data);
+    const needKey = () => json(res, 401, { error: "creator key required" });
+
+    if (path === "/api/admin/adopt" && method === "POST") return creator ? this.adopt(req, res) : needKey();
 
     const runner = this.runner;
     if (!runner) return json(res, 503, { error: "no world here yet", state: this.state });
@@ -132,27 +164,52 @@ export class WorldServer {
 
     if (method === "GET") {
       switch (path) {
-        case "/api/status":
-          return json(res, 200, statusData(runner));
+        case "/api/status": {
+          const s = statusData(runner);
+          if (!creator) delete (s as Partial<typeof s>).seed; // the seed foretells the land and the winters
+          return send(200, s);
+        }
         case "/api/chronicle": {
           const since = Number(url.searchParams.get("since") ?? 0) || 0;
           const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get("limit") ?? 200) || 200));
-          return json(res, 200, { entries: chronicleSince(w, since, limit), size: w.chronicle.size });
+          return send(200, { entries: chronicleSince(w, since, limit), size: w.chronicle.size });
         }
         case "/api/ais":
-          return json(res, 200, { tick: w.tick, ais: w.population.list().map((a) => agentSummary(a, w)) });
+          return send(200, { tick: w.tick, ais: w.population.list().map((a) => agentSummary(a, w)) });
         case "/api/words":
           return text(res, lexiconReport(w));
         case "/api/shelters":
           return text(res, sheltersReport(w));
         case "/api/items":
           return text(res, itemsReport(w));
-        case "/api/materials":
-          return text(res, materialsTable(w));
+        case "/api/palette":
+          return send(200, { materials: creator ? fullPalette(w.materials) : publicPalette(w.materials) });
+        case "/api/chunks":
+          return send(200, { boot: this.hub.boot, size: 32, chunks: chunkIndex(w.grid) });
+        case "/api/chunkdata": {
+          const wanted = parseChunkList(url.searchParams.get("c") ?? "");
+          if (wanted === null) return json(res, 400, { error: "c must be a list like 0,0;1,-2" });
+          if (wanted.length > MAX_CHUNKS_PER_REQUEST) return json(res, 400, { error: `at most ${MAX_CHUNKS_PER_REQUEST} chunks per request` });
+          const chunks = [];
+          const missing: Array<[number, number]> = [];
+          for (const [cx, cy] of wanted) {
+            const chunk = w.grid.viewChunk(cx, cy); // never loads anything into the world
+            if (chunk) chunks.push(encodeChunk(chunk));
+            else missing.push([cx, cy]);
+          }
+          return send(200, { boot: this.hub.boot, chunks, missing });
+        }
         case "/api/stream":
-          this.hub.add(res, w);
+          if (!creator && this.hub.publicSize >= this.maxWatchers) {
+            res.setHeader("Retry-After", "60");
+            return json(res, 503, { error: "the world has as many watchers as it can take right now; try again soon" });
+          }
+          this.hub.add(res, w, creator);
           return;
+        case "/api/materials":
+          return creator ? text(res, materialsTable(w)) : needKey();
         case "/api/admin/save": {
+          if (!creator) return needKey();
           const gz = await this.opts.exportSave();
           res.writeHead(200, {
             "Content-Type": "application/gzip",
@@ -167,14 +224,15 @@ export class WorldServer {
       if (m) {
         const id = Number(m[1]);
         const agent = w.population.get(id);
-        if (agent) return json(res, 200, { alive: true, ...agentView(agent, w) });
+        if (agent) return send(200, { alive: true, ...agentView(agent, w) });
         const body = w.population.bodies.find((b) => b.agentId === id);
-        if (body) return json(res, 200, { alive: false, id, cause: body.cause, ageDays: body.ageDays });
+        if (body) return send(200, { alive: false, id, cause: body.cause, ageDays: body.ageDays });
         return json(res, 404, { error: `no AI #${id}` });
       }
     }
 
     if (path === "/api/control" && method === "POST") {
+      if (!creator) return needKey();
       const body = await readJson(req, 4096);
       const action = String(body?.action ?? "");
       switch (action) {
@@ -220,6 +278,43 @@ export class WorldServer {
       json(res, 400, { error: (err as Error).message });
     }
   }
+}
+
+/** Who is asking: the first address in X-Forwarded-For (set by the host's proxy), else the socket. */
+function visitorOf(req: IncomingMessage): string {
+  const fwd = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim();
+  return first || req.socket.remoteAddress || "unknown";
+}
+
+/** Parses "cx,cy;cx,cy" into pairs, or null if malformed. */
+export function parseChunkList(raw: string): Array<[number, number]> | null {
+  if (raw.trim() === "") return [];
+  const out: Array<[number, number]> = [];
+  for (const part of raw.split(";")) {
+    const m = part.trim().match(/^(-?\d{1,7}),(-?\d{1,7})$/);
+    if (!m) return null;
+    out.push([Number(m[1]), Number(m[2])]);
+  }
+  return out;
+}
+
+function jsonMaybeGzip(req: IncomingMessage, res: ServerResponse, status: number, data: unknown): void {
+  const body = Buffer.from(JSON.stringify(data));
+  const accepts = /\bgzip\b/.test(String(req.headers["accept-encoding"] ?? ""));
+  const headers: Record<string, string | number> = {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    Vary: "Accept-Encoding",
+  };
+  if (accepts && body.length > GZIP_OVER_BYTES) {
+    const gz = gzipSync(body, { level: 6 });
+    res.writeHead(status, { ...headers, "Content-Encoding": "gzip", "Content-Length": gz.length });
+    res.end(gz);
+    return;
+  }
+  res.writeHead(status, { ...headers, "Content-Length": body.length });
+  res.end(body);
 }
 
 function hash(s: string): Buffer {

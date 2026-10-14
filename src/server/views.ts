@@ -12,6 +12,8 @@ import { natureWords } from "../agents/personality.ts";
 import { skillWords } from "../agents/skill.ts";
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
+/** Positions to a tenth of a tile: plenty for a viewer that glides between updates. */
+const r1 = (v: number) => Math.round(v * 10) / 10;
 
 /** The few fields the viewer needs every frame to draw an AI moving. */
 export interface AgentPose {
@@ -27,8 +29,8 @@ export interface AgentPose {
 export function agentPose(agent: Agent): AgentPose {
   return {
     id: agent.id,
-    x: r2(agent.x),
-    y: r2(agent.y),
+    x: r1(agent.x),
+    y: r1(agent.y),
     h: r2(agent.heading),
     a: agent.asleep ? "sleep" : (agent.action?.type ?? ""),
   };

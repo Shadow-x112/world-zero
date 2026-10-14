@@ -45,20 +45,21 @@ export const STATUS_PAGE = /* html */ `<!doctype html>
   <h1>World Zero</h1>
   <p class="sub" id="sub">Connecting…</p>
 
-  <section class="panel" id="login">
+  <section class="panel hidden" id="login">
     <h2>Creator key</h2>
     <form class="row" id="loginForm">
       <input id="key" type="password" autocomplete="current-password" placeholder="Paste your creator key" aria-label="Creator key">
       <button type="submit">Enter</button>
     </form>
-    <p class="msg" id="loginMsg">The key is in the server's settings (CREATOR_KEY).</p>
+    <p class="msg" id="loginMsg">Only the creator can change the world. The key is in the server's settings (CREATOR_KEY).</p>
   </section>
 
-  <div id="app" class="hidden">
+  <div id="app">
     <section class="panel">
       <div class="row" style="justify-content:space-between; margin-bottom:10px">
         <h2 style="margin:0"><span id="conn" class="dead"><span class="dot"></span><span id="connText">offline</span></span></h2>
-        <div class="row">
+        <button id="creatorBtn">Creator</button>
+        <div class="row hidden" id="controls">
           <button data-act="pause">Pause</button>
           <button data-act="resume">Resume</button>
           <select id="speed" aria-label="Speed">${SPEEDS.filter((s) => s > 0).map((s) => `<option value="${s}">${s}x</option>`).join("")}</select>
@@ -94,34 +95,42 @@ export const STATUS_PAGE = /* html */ `<!doctype html>
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
   async function api(path, opts = {}) {
-    const res = await fetch(path, { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + key } });
-    if (res.status === 401) { lock("That key was not accepted."); throw new Error("unauthorized"); }
-    return res;
+    const headers = { ...(opts.headers || {}) };
+    if (key) headers.Authorization = "Bearer " + key;
+    return fetch(path, { ...opts, headers });
   }
 
   function lock(msg) {
     key = ""; try { localStorage.removeItem("wz-key"); } catch {}
-    if (es) es.close(); es = null; clearInterval(timer);
-    $("app").classList.add("hidden"); $("login").classList.remove("hidden");
-    $("loginMsg").textContent = msg || "Locked.";
+    $("controls").classList.add("hidden"); $("creatorBtn").classList.remove("hidden");
+    $("ctlMsg").textContent = msg || "";
+    connect();
   }
 
+  /** Checks the key against a creator-only door before showing the controls. */
   async function unlock() {
-    const res = await api("/api/status").catch(() => null);
-    if (!res) return;
-    if (res.status === 503) { $("sub").textContent = "Waiting for a world to be brought here."; }
-    $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+    const res = await api("/api/materials").catch(() => null);
+    if (!res || res.status === 401) { key = ""; $("loginMsg").textContent = "That key was not accepted."; return; }
     try { localStorage.setItem("wz-key", key); } catch {}
-    refresh(); timer = setInterval(refresh, 10000);
+    $("login").classList.add("hidden"); $("controls").classList.remove("hidden"); $("creatorBtn").classList.add("hidden");
+    $("ctlMsg").textContent = "";
+    connect();
+  }
+
+  async function start() {
+    await refresh(); timer = setInterval(refresh, 10000);
     loadChronicle(); connect();
+    if (key) unlock();
   }
 
   function stat(label, value) { return '<div class="stat"><b>' + esc(value) + '</b><span>' + esc(label) + '</span></div>'; }
 
   async function refresh() {
-    const res = await api("/api/status"); if (!res.ok) return;
+    const res = await api("/api/status");
+    if (res.status === 503) { $("sub").textContent = "Waiting for a world to be brought here."; return; }
+    if (!res.ok) return;
     const s = await res.json();
-    $("sub").textContent = (s.name ? s.name + " · " : "") + "Generation " + s.generation + " · seed " + s.seed;
+    $("sub").textContent = (s.name ? s.name + " · " : "") + "Generation " + s.generation + (s.seed !== undefined ? " · seed " + s.seed : "");
     $("speed").value = String(s.speed || 1);
     $("stats").innerHTML = [
       stat("date", s.date), stat("speed", s.paused ? "paused" : s.speed + "x"),
@@ -155,9 +164,9 @@ export const STATUS_PAGE = /* html */ `<!doctype html>
 
   function connect() {
     if (es) es.close();
-    es = new EventSource("/api/stream?key=" + encodeURIComponent(key));
+    es = new EventSource("/api/stream" + (key ? "?key=" + encodeURIComponent(key) : ""));
     es.onopen = () => { $("conn").className = "live"; $("connText").textContent = "live"; };
-    es.onerror = () => { $("conn").className = "dead"; $("connText").textContent = "reconnecting"; };
+    es.onerror = () => { $("conn").className = "dead"; $("connText").textContent = "reconnecting (the world may be full of watchers)"; };
     es.addEventListener("changes", (ev) => { const c = JSON.parse(ev.data); if (c.chronicle.length) addChron(c.chronicle); });
     es.addEventListener("snapshot", () => {});
   }
@@ -172,6 +181,7 @@ export const STATUS_PAGE = /* html */ `<!doctype html>
   document.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", () => control({ action: b.dataset.act })));
   $("speed").addEventListener("change", (e) => control({ action: "speed", speed: Number(e.target.value) }));
   $("logout").addEventListener("click", () => lock("Locked."));
+  $("creatorBtn").addEventListener("click", () => { $("login").classList.toggle("hidden"); $("key").focus(); });
   $("download").addEventListener("click", async () => {
     $("ctlMsg").textContent = "Preparing the save…";
     const res = await api("/api/admin/save"); if (!res.ok) { $("ctlMsg").textContent = "Could not download."; return; }
@@ -182,8 +192,7 @@ export const STATUS_PAGE = /* html */ `<!doctype html>
   });
   $("loginForm").addEventListener("submit", (e) => { e.preventDefault(); key = $("key").value.trim(); $("key").value = ""; unlock(); });
 
-  fetch("/health").then((r) => r.json()).then((h) => { if (!key) $("sub").textContent = h.state === "running" ? "The world is running." : "Waiting for a world."; }).catch(() => {});
-  if (key) unlock();
+  start();
 })();
 </script>
 </body>
