@@ -425,7 +425,7 @@ test("the viewer's files are served, and only them", async () => {
     assert.match(page.body, /importmap/);
     assert.match(String(page.headers["content-security-policy"]), /cdn\.jsdelivr\.net/, "Three.js may come from its pinned CDN");
     assert.match(page.body, /three@\d+\.\d+\.\d+/, "and its version is pinned");
-    for (const f of ["main.js", "terrain.js", "api.js", "sky.js", "quality.js", "figures.js", "ui.js", "viewer.css"]) {
+    for (const f of ["main.js", "terrain.js", "api.js", "sky.js", "quality.js", "figures.js", "ui.js", "atmosphere.js", "viewer.css"]) {
       const r = await call(port, "GET", `/viewer/${f}`);
       assert.equal(r.status, 200, f);
     }

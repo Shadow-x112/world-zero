@@ -75,7 +75,7 @@ On Railway the world runs from the `Dockerfile` with a volume mounted at `/data`
    - 5e. **Emergent language** ✅
    - 5f. **Conflict** ✅
 6. **Server deployment (24/7)** ✅
-7. 3D viewer, speed controls, AI inspector, chronicle
+7. **3D viewer, AI inspector, chronicle** ✅
 8. Creator panel
 
 ## Layout

@@ -124,6 +124,23 @@ details summary:hover { color: var(--line); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast .when { display: inline; margin-right: 8px; }
 
+/* ---------- A season turning ---------- */
+.season-card {
+  position: fixed; z-index: 4; left: 50%; top: 38%; transform: translate(-50%, -50%); text-align: center; pointer-events: none;
+  opacity: 0; transition: opacity 1.6s ease; width: min(90vw, 720px);
+}
+.season-card.show { opacity: 1; }
+.season-title {
+  font-size: clamp(22px, 5vw, 44px); letter-spacing: 0.42em; color: var(--season, var(--line)); padding-left: 0.42em;
+  text-shadow: 0 0 18px var(--season, var(--line)), 0 0 4px rgba(0, 0, 0, 0.8);
+}
+.season-sub { margin-top: 10px; color: var(--ink); letter-spacing: 0.18em; font-size: 13px; text-transform: uppercase; opacity: 0.85; }
+.season-card::before, .season-card::after {
+  content: ""; display: block; height: 1px; margin: 14px auto; width: 0; background: var(--season, var(--line));
+  box-shadow: 0 0 10px var(--season, var(--line)); transition: width 2.4s ease;
+}
+.season-card.show::before, .season-card.show::after { width: 70%; }
+
 /* ---------- Phones: chronicle hidden by default, inspector becomes a bottom sheet ---------- */
 @media (max-width: 760px) {
   .hud-top { padding: 8px 12px; }
@@ -137,6 +154,7 @@ details summary:hover { color: var(--line); }
   .side { max-height: calc(100vh - 130px); }
 }
 @media (prefers-reduced-motion: reduce) {
+  .season-card, .season-card::before, .season-card::after { transition: none; }
   .list li.fresh { animation: none; }
   .toast, .bars .bar i { transition: none; }
 }

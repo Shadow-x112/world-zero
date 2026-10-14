@@ -52,6 +52,9 @@ const fragment = /* glsl */ `
   uniform vec3 uWater;
   uniform vec3 uRidge;
   uniform sampler2D uPalette;
+  uniform vec3 uPulseCenter;
+  uniform float uPulseRadius;
+  uniform vec3 uPulseColor;
   varying vec3 vWorld;
   varying vec4 vA;
   varying vec4 vB;
@@ -96,8 +99,9 @@ const fragment = /* glsl */ `
       } else {
         // Fine lines are faint; every eighth line carries the season's color.
         col += uLine * (0.045 * minor * (1.0 - far) + 0.32 * major) * uGlow;
-        // Worn paths: the ground itself lights up where feet go.
-        col += uLine * vB.x * vB.x * 0.035 * uGlow;
+        // Worn paths: where feet go often, the tile's own lines burn brighter
+        // (with only a whisper of fill), so trodden ground reads as traced light.
+        col += uLine * vB.x * (0.006 + 0.42 * minor * (1.0 - far)) * uGlow;
         if (mat > 0.5) {
           // A small point of light at the tile's heart: what lies there, and how much.
           vec3 mc = paletteColor(mat);
@@ -132,6 +136,15 @@ const fragment = /* glsl */ `
         flicker = 0.55 + 0.45 * step(0.25, n);
       }
       col = vec3(0.002, 0.003, 0.006) + mc * (0.012 + edge * (0.3 + 0.8 * sound)) * uGlow * flicker;
+    }
+
+    // A season turning: a ring of the new color sweeps out over the land.
+    if (uPulseRadius > 0.0) {
+      float d = length(vWorld.xz - uPulseCenter.xz);
+      float band = exp(-pow((d - uPulseRadius) / 3.0, 2.0)) + 0.35 * exp(-pow((d - uPulseRadius * 0.82) / 6.0, 2.0));
+      float fade = 1.0 - smoothstep(150.0, 400.0, uPulseRadius);
+      float lines = face < 0.5 ? (0.25 + grid(p, 1.0, 1.4) * 1.6) : 0.6;
+      col += uPulseColor * band * fade * lines * 0.9;
     }
 
     float fog = 1.0 - exp(-uFogDensity * uFogDensity * vDepth * vDepth);
@@ -232,6 +245,9 @@ export class Terrain {
         uRidge: { value: new THREE.Color("#ff3d7f") },
         uPalette: { value: this.palette },
         uCenter: { value: new THREE.Vector3() },
+        uPulseCenter: { value: new THREE.Vector3() },
+        uPulseRadius: { value: -1 },
+        uPulseColor: { value: new THREE.Color() },
       },
     });
     this.void = makeVoid(scene, this.material.uniforms);

@@ -13,8 +13,10 @@ import { Sky } from "./sky.js";
 import { Quality } from "./quality.js";
 import { Walkers } from "./figures.js";
 import { Ui } from "./ui.js";
+import { Fires, Snow, SeasonPulse } from "./atmosphere.js";
 
 const $ = (id) => document.getElementById(id);
+let fpsFrames = 0, fpsTime = 0, fpsShown = 0;
 const canvas = $("world");
 
 // ---------- Renderer, scene, camera ----------
@@ -46,6 +48,9 @@ const terrain = new Terrain(scene);
 const sky = new Sky(scene, terrain);
 const walkers = new Walkers(scene, terrain);
 const ui = new Ui({ camera, controls, walkers, terrain, api, canvas });
+const fires = new Fires(scene, terrain);
+const snow = new Snow(scene);
+const pulse = new SeasonPulse(terrain.material);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -63,7 +68,7 @@ function applyQuality() {
   const t = quality.tier;
   bloom.enabled = t.bloom;
   walkers.setGlow(t.bloom);
-  $("quality").textContent = t.name;
+  showQuality();
   resize();
 }
 
@@ -210,11 +215,32 @@ function showLoad() {
 
 // ---------- The world's clock ----------
 
+/** The corner note: quality tier and how smoothly it runs (useful when trying a new device). */
+function showQuality() {
+  $("quality").textContent = fpsShown ? `${quality.tier.name} · ${fpsShown} fps` : quality.tier.name;
+}
+
+const SEASON_NAMES = { growth: "THE GROWING SEASON", peak: "HIGH SUMMER", decline: "THE WANING SEASON", cold: "THE COLD SEASON" };
+let lastSeason = null;
+function seasonTurned(s) {
+  document.documentElement.style.setProperty("--season", `#${sky.targetLine.getHexString()}`);
+  // The ring starts where you are looking, so you see it pass.
+  pulse.fire(controls.target, sky.targetLine);
+  $("seasonTitle").textContent = SEASON_NAMES[s.season] ?? s.season.toUpperCase();
+  $("seasonSub").textContent = s.season === "cold" && s.winter ? `a ${s.winter} winter · year ${s.year}` : `year ${s.year}`;
+  const card = $("seasonCard");
+  card.classList.add("show");
+  setTimeout(() => card.classList.remove("show"), 6500);
+}
+
 async function refreshStatus() {
   try {
     const s = await api.status();
     sky.setWorld(s);
     document.documentElement.style.setProperty("--season", `#${sky.targetLine.getHexString()}`);
+    snow.setWinter(s.season, s.winter);
+    if (lastSeason !== null && lastSeason !== s.season) seasonTurned(s);
+    lastSeason = s.season;
     $("clock").textContent = s.date.replace(/\s*\((day|night)\)$/, "");
     const parts = [`${s.alive} alive`];
     if (s.name) parts.unshift(s.name[0].toUpperCase() + s.name.slice(1));
@@ -242,6 +268,7 @@ follow({
       boot = s.boot;
     }
     walkers.snapshot(s.agents);
+    fires.set(s.fires);
     if (!firstFocus && s.agents.length) {
       firstFocus = true;
       const c = walkers.centroid();
@@ -252,6 +279,7 @@ follow({
   },
   onChanges(c) {
     walkers.changes(c);
+    fires.changes(c.fires);
     if (c.chronicle.length) ui.addChronicle(c.chronicle, true);
     if (c.chunks) want(c.chunks);
   },
@@ -280,11 +308,23 @@ function frame() {
   const camDist = camera.position.distanceTo(controls.target);
   walkers.update(performance.now(), THREE.MathUtils.clamp(camDist / 70, 1, 3));
   terrain.material.uniforms.uTime.value += dt;
+  const t = terrain.material.uniforms.uTime.value;
+  fires.update(t);
+  snow.update(t, dt, controls.target, renderer.getPixelRatio());
+  pulse.update(performance.now());
   composer.render();
   quality.sample(dt, building);
+  fpsFrames++;
+  fpsTime += dt;
+  if (fpsTime >= 2) {
+    fpsShown = Math.round(fpsFrames / fpsTime);
+    fpsFrames = 0;
+    fpsTime = 0;
+    showQuality();
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 // For poking at in the browser console.
-window.worldZero = { scene, camera, controls, terrain, sky, walkers, quality, ui };
+window.worldZero = { scene, camera, controls, terrain, sky, walkers, quality, ui, fires, snow, pulse, seasonTurned };

@@ -207,6 +207,7 @@ export class Ui {
         this.tags.delete(id);
       }
     }
+    const placed = [];
     for (const [id, kind] of want) {
       const w = this.walkers.list.get(id);
       if (!w || w.dx === undefined) continue;
@@ -224,9 +225,17 @@ export class Ui {
         el.style.display = "none";
         continue;
       }
+      const sx = (this.tmp.x * 0.5 + 0.5) * rect.width;
+      const sy = (-this.tmp.y * 0.5 + 0.5) * rect.height;
+      // Names that would sit on top of each other: only the first (followed and mate come first) shows.
+      if (!kind && placed.some(([px, py]) => Math.abs(px - sx) < 30 && Math.abs(py - sy) < 14)) {
+        el.style.display = "none";
+        continue;
+      }
+      placed.push([sx, sy]);
       el.style.display = "";
-      el.style.left = `${(this.tmp.x * 0.5 + 0.5) * rect.width}px`;
-      el.style.top = `${(-this.tmp.y * 0.5 + 0.5) * rect.height}px`;
+      el.style.left = `${sx}px`;
+      el.style.top = `${sy}px`;
     }
   }
 
