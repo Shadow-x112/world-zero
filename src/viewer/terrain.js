@@ -97,7 +97,7 @@ const fragment = /* glsl */ `
         // Fine lines are faint; every eighth line carries the season's color.
         col += uLine * (0.045 * minor * (1.0 - far) + 0.32 * major) * uGlow;
         // Worn paths: the ground itself lights up where feet go.
-        col += uLine * vB.x * vB.x * 0.12 * uGlow;
+        col += uLine * vB.x * vB.x * 0.035 * uGlow;
         if (mat > 0.5) {
           // A small point of light at the tile's heart: what lies there, and how much.
           vec3 mc = paletteColor(mat);

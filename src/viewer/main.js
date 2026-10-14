@@ -11,7 +11,7 @@ import { api, follow, CHUNK } from "./api.js";
 import { Terrain } from "./terrain.js";
 import { Sky } from "./sky.js";
 import { Quality } from "./quality.js";
-import { Walkers } from "./walkers.js";
+import { Walkers } from "./figures.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("world");
@@ -219,6 +219,7 @@ async function refreshStatus() {
     if (s.paused) parts.push("time paused");
     else if (s.speed > 1) parts.push(`${s.speed}× speed`);
     $("meta").textContent = parts.join(" · ");
+    api.ais().then((r) => walkers.setMates(r.ais)).catch(() => {});
   } catch (err) {
     if (err.status === 503) $("clock").textContent = "waiting for the world…";
   }
@@ -265,7 +266,9 @@ function frame() {
   clampTarget();
   const building = terrain.update() > 0 || wanted.size > 0 || fetching;
   sky.update(dt);
-  walkers.update(performance.now());
+  // Far away, figures grow a little so they stay findable (up to 3x at the widest view).
+  const camDist = camera.position.distanceTo(controls.target);
+  walkers.update(performance.now(), THREE.MathUtils.clamp(camDist / 70, 1, 3));
   terrain.material.uniforms.uTime.value += dt;
   composer.render();
   quality.sample(dt, building);

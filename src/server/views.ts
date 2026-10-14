@@ -24,26 +24,32 @@ export interface AgentPose {
   h: number;
   /** Current action type ("sleep" while asleep, "" while deciding). */
   a: string;
+  /** 1 if it has something in hand (gathered stuff or a made thing). */
+  c: 0 | 1;
+  /** 1 while still a child. */
+  k: 0 | 1;
 }
 
-export function agentPose(agent: Agent): AgentPose {
+export function agentPose(agent: Agent, tick: number): AgentPose {
   return {
     id: agent.id,
     x: r1(agent.x),
     y: r1(agent.y),
     h: r2(agent.heading),
     a: agent.asleep ? "sleep" : (agent.action?.type ?? ""),
+    c: agent.carrying.length > 0 || agent.items.length > 0 ? 1 : 0,
+    k: agent.grown(tick) ? 0 : 1,
   };
 }
 
 export function samePose(a: AgentPose, b: AgentPose): boolean {
-  return a.x === b.x && a.y === b.y && a.h === b.h && a.a === b.a;
+  return a.x === b.x && a.y === b.y && a.h === b.h && a.a === b.a && a.c === b.c && a.k === b.k;
 }
 
 /** One row per living AI: who it is and how it is doing. */
 export function agentSummary(agent: Agent, world: World) {
   return {
-    ...agentPose(agent),
+    ...agentPose(agent, world.tick),
     label: agent.label,
     doing: doing(agent),
     asleep: agent.asleep,

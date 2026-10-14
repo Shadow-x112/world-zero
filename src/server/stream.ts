@@ -133,7 +133,7 @@ export class StreamHub {
       worldId: world.meta.id,
       generation: world.meta.generation,
       tick: world.tick,
-      agents: world.population.list().map(agentPose),
+      agents: world.population.list().map((a) => agentPose(a, world.tick)),
       fires: firePositions(world),
       chunks: chunkIndex(world.grid),
       chronicleSize: world.chronicle.size,
@@ -142,7 +142,7 @@ export class StreamHub {
 
   private resetBaseline(world: World): void {
     this.worldId = world.meta.id;
-    this.poses = new Map(world.population.list().map((a) => [a.id, agentPose(a)]));
+    this.poses = new Map(world.population.list().map((a) => [a.id, agentPose(a, world.tick)]));
     this.fires = new Set(firePositions(world).map(([x, y]) => `${x},${y}`));
     this.chronicleSize = world.chronicle.size;
     this.revisions = new Map([...world.grid.allChunks()].map((c) => [`${c.cx},${c.cy}`, c.revision]));
@@ -159,7 +159,7 @@ export class StreamHub {
     const seen = new Set<number>();
     for (const agent of world.population.list()) {
       seen.add(agent.id);
-      const pose = agentPose(agent);
+      const pose = agentPose(agent, world.tick);
       const before = this.poses.get(agent.id);
       if (!before || !samePose(before, pose)) {
         agents.push(pose);
