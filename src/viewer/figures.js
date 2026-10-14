@@ -1,10 +1,10 @@
-// The AIs: identical slim figures, dark inside with a glowing rim, all one color (they
-// began the same; what tells them apart is what they do). A ring of light at the feet
-// takes the color of what each is doing. Updates arrive twice a second; each figure
-// glides between them, walks with a bob when moving, lies down to sleep, leans into
-// a run when fleeing, and holds a small light overhead when carrying something.
+// The AIs as they move: updates arrive twice a second, and each figure glides between
+// them, turning to face where it goes. Their bodies (see creatures.js) are drawn from the
+// lives they have lived; a ring of light at the feet takes the color of what each is
+// doing, and what one carries is held in its arms.
 
 import * as THREE from "three";
+import { Creatures } from "./creatures.js";
 
 const GLIDE_MS = 550;
 const MAX = 2048;
@@ -37,40 +37,7 @@ export function accentCss(action) {
   return `rgb(${c(a[0])}, ${c(a[1])}, ${c(a[2])})`;
 }
 
-const RIM = new THREE.Color(0.55, 1.5, 1.9);
-const RIM_ASLEEP = new THREE.Color(0.1, 0.22, 0.32);
 const CARRY = new THREE.Color(1.3, 1.15, 0.8);
-
-/** Dark core, bright rim: the figure is drawn by its outline of light. */
-function rimMaterial() {
-  return new THREE.ShaderMaterial({
-    vertexShader: /* glsl */ `
-      varying vec3 vN;
-      varying vec3 vV;
-      varying vec3 vC;
-      void main() {
-        mat4 m = modelMatrix * instanceMatrix;
-        vec4 wp = m * vec4(position, 1.0);
-        vec4 mv = viewMatrix * wp;
-        vN = normalize(mat3(viewMatrix) * mat3(m) * normal);
-        vV = normalize(-mv.xyz);
-        vC = instanceColor;
-        gl_Position = projectionMatrix * mv;
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      varying vec3 vN;
-      varying vec3 vV;
-      varying vec3 vC;
-      void main() {
-        float f = 1.0 - max(dot(normalize(vN), normalize(vV)), 0.0);
-        float rim = pow(f, 2.2);
-        vec3 col = vec3(0.004, 0.008, 0.014) + vC * (0.06 + 1.25 * rim);
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `,
-  });
-}
 
 function glowMaterial() {
   return new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -88,32 +55,26 @@ function instanced(geo, mat, name) {
 }
 
 export class Walkers {
-  constructor(scene, terrain) {
+  constructor(scene, terrain, renderer) {
     this.terrain = terrain;
     this.list = new Map(); // id -> state
     this.size = 1;
     this.mates = new Map(); // id -> mate id
 
-    // One smooth silhouette from feet to neck, turned like a figure on a lathe.
-    const profile = [
-      [0.0, 0.0], [0.085, 0.0], [0.1, 0.06], [0.09, 0.42], [0.13, 0.55], [0.155, 0.62],
-      [0.135, 0.76], [0.155, 0.9], [0.195, 1.06], [0.205, 1.13], [0.15, 1.2], [0.07, 1.24], [0.065, 1.29], [0.0, 1.3],
-    ].map(([r, y]) => new THREE.Vector2(r, y));
-    const body = new THREE.LatheGeometry(profile, 18);
-    body.computeVertexNormals();
-    const head = new THREE.SphereGeometry(0.13, 16, 12);
+    this.bodies = new Creatures(scene, renderer);
     const ring = new THREE.RingGeometry(0.3, 0.38, 32);
     ring.rotateX(-Math.PI / 2);
     const carry = new THREE.OctahedronGeometry(0.075, 0);
 
-    const rim = rimMaterial();
-    this.body = instanced(body, rim, "bodies");
-    this.head = instanced(head, rim, "heads");
     this.ring = instanced(ring, glowMaterial(), "rings");
     this.carry = instanced(carry, glowMaterial(), "carried");
-    for (const m of [this.body, this.head, this.ring, this.carry]) scene.add(m);
+    for (const m of [this.ring, this.carry]) scene.add(m);
 
     this.trails = new Trails(scene, terrain);
+    this.trails.colorOf = (id, out) => {
+      const h = this.list.get(id)?.look?.hue;
+      return h === undefined ? null : out.setHSL(h, 0.85, 0.6);
+    };
     this.links = new Links(scene);
     this.effects = new Effects(scene);
 
@@ -133,10 +94,35 @@ export class Walkers {
   setMates(ais) {
     this.mates.clear();
     for (const a of ais) if (a.mate !== null) this.mates.set(a.id, a.mate);
+    // How each one looks, and how it is (refreshed now and then; looks change slowly).
+    // A nature shows as itself plus how far it stands from everyone else's, so people
+    // read as different people even while the whole world shares a leaning.
+    const withLook = ais.filter((a) => a.look);
+    const mean = [0, 0, 0, 0, 0];
+    for (const a of withLook) a.look.p.forEach((v, k) => (mean[k] += v / withLook.length));
+    this.looks = new Map();
+    for (const a of withLook) {
+      const shown = a.look.p.map((v, k) => Math.max(-1, Math.min(1, v + (v - mean[k]) * 2.5)));
+      const look = { ...a.look, shown, ageDays: a.ageDays, health: a.health };
+      this.looks.set(a.id, look);
+      const w = this.list.get(a.id);
+      if (w) {
+        w.look = look;
+        w.health = a.health;
+      }
+    }
+  }
+
+  /** The color of one AI's light, as CSS (for the interface). */
+  hueCss(id) {
+    const h = this.list.get(id)?.look?.hue;
+    return h === undefined ? null : `hsl(${Math.round(h * 360)}, 85%, 62%)`;
   }
 
   fresh(a, now) {
-    return { id: a.id, fx: a.x, fy: a.y, tx: a.x, ty: a.y, t0: now, a: a.a, c: a.c, k: a.k, h: a.h, yaw: yawOf(a.h), px: a.x, py: a.y, phase: Math.random() * 6, speed: 0, lean: 0, lie: a.a === "sleep" ? 1 : 0 };
+    const known = this.looks?.get(a.id);
+    return {
+      look: known, health: known?.health ?? 1, id: a.id, fx: a.x, fy: a.y, tx: a.x, ty: a.y, t0: now, a: a.a, c: a.c, k: a.k, h: a.h, yaw: yawOf(a.h), px: a.x, py: a.y, phase: Math.random() * 6, speed: 0, lean: 0, lie: a.a === "sleep" ? 1 : 0 };
   }
 
   snapshot(agents) {
@@ -166,6 +152,7 @@ export class Walkers {
       }
       this.list.delete(id);
       this.trails.forget(id);
+      this.bodies.forget(id);
     }
   }
 
@@ -192,14 +179,17 @@ export class Walkers {
   }
 
   /** zoom: how far the camera is, as a size boost so figures stay findable from high up. */
-  update(now, zoom = 1) {
+  update(now, zoom = 1, camDist = 30) {
     this.zoom = zoom;
+    // From afar, each one's light reaches further so it can still be found.
+    const far = Math.max(0, Math.min(1, (camDist - 18) / 70));
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     const o = this.o;
     let i = 0;
+    this.bodies.begin(now, this.camera);
     for (const w of this.list.values()) {
-      if (i >= MAX) break;
+      if (i >= MAX / 2) break; // each side of a limb takes half of a part's instances
       const [x, y] = this.at(w, now);
       // How fast it is going (smoothed), for the walk.
       const mx = x - w.px;
@@ -220,53 +210,31 @@ export class Walkers {
 
       const gy = this.terrain.groundY(x, y);
       w.gy = gy;
-      const s = this.size * zoom * (w.k ? CHILD_SCALE : 1);
-      w.phase += dt * (2 + w.speed * 7);
+      const s = this.size * zoom;
+      w.phase += dt * (2 + Math.min(w.speed, 2.5) * 5);
       const walking = w.speed > 0.25 && !asleep;
-      const bob = walking ? Math.abs(Math.sin(w.phase)) * 0.07 * s : Math.sin(w.phase * 0.5) * 0.006 * s;
-      const building = w.a === "build" || w.a === "gather" || w.a === "tinker";
-      const work = building && !walking ? Math.max(0, Math.sin(w.phase * 2.2)) * 0.05 * s : 0;
+      const bob = walking ? Math.abs(Math.sin(w.phase)) * 0.05 * s : 0;
 
-      // Body: upright, leaning into a run, or lying down (pivoting at the feet, then
-      // shifted back so a sleeper lies where it stood).
-      const tilt = w.lean + w.lie * (Math.PI / 2 - w.lean) + work;
-      o.rotation.set(tilt, w.yaw, 0);
-      this.q.setFromEuler(o.rotation);
-      const fx = Math.sin(w.yaw), fz = Math.cos(w.yaw);
-      const back = 0.68 * s * w.lie;
-      const footY = gy + bob + 0.13 * s * w.lie;
-      o.position.set(x - fx * back, footY, y - fz * back);
-      o.scale.setScalar(s);
-      o.updateMatrix();
-      this.body.setMatrixAt(i, o.matrix);
-      const fpx = o.position.x, fpz = o.position.z;
-
-      // Head sits on the neck, wherever the body points.
-      this.v.set(0, 1.42 * s, 0).applyQuaternion(this.q);
-      o.position.set(fpx + this.v.x, footY + this.v.y, fpz + this.v.z);
-      o.updateMatrix();
-      this.head.setMatrixAt(i, o.matrix);
-      const cy = footY;
-
-      const rim = asleep ? this.c.copy(RIM_ASLEEP).lerp(RIM, 0.08 + 0.06 * Math.sin(now / 1400 + w.id)) : RIM;
-      this.body.setColorAt(i, rim);
-      this.head.setColorAt(i, rim);
+      const hands = this.bodies.draw(w, { x, z: y, gy, yaw: w.yaw, scale: s, walking, asleep, bob, far }, now, dt);
 
       // The ring at its feet says what it is doing.
       const acc = ACCENT[w.a] ?? ACCENT[""];
       const pulse = w.a === "flee" ? 0.7 + 0.3 * Math.sin(now / 90) : asleep ? 0.6 + 0.4 * Math.sin(now / 1400 + w.id) : 1;
+      const working = w.a === "build" || w.a === "gather" || w.a === "tinker";
       o.rotation.set(0, 0, 0);
       o.position.set(x, gy + 0.03, y);
-      o.scale.setScalar(s * (building ? 1 + 0.08 * Math.sin(w.phase * 2.2) : 1));
+      o.scale.setScalar(s * (w.k ? 0.75 : 1) * (working ? 1 + 0.08 * Math.sin(w.phase * 2.2) : 1));
       o.updateMatrix();
       this.ring.setMatrixAt(i, o.matrix);
       this.ring.setColorAt(i, this.c.setRGB(acc[0] * pulse, acc[1] * pulse, acc[2] * pulse));
 
-      // Something in hand: a small light overhead.
-      if (w.c && !asleep) {
-        o.position.set(fpx + this.v.x, cy + this.v.y + 0.34 * s + Math.sin(now / 400 + w.id) * 0.03, fpz + this.v.z);
-        o.rotation.set(0, now / 900 + w.id, 0);
-        o.scale.setScalar(s);
+      // Something in hand: held in its arms.
+      // (While eating, a morsel is held up to its face.)
+      if ((w.c || w.a === "eat") && !asleep) {
+        o.position.copy(hands);
+        o.position.y -= 0.02 * s;
+        o.rotation.set(0, now / 1500 + w.id, 0);
+        o.scale.setScalar(s * (w.a === "eat" && !w.c ? 0.4 : 0.6));
       } else {
         o.scale.setScalar(0);
       }
@@ -277,7 +245,8 @@ export class Walkers {
       this.trails.sample(w.id, x, gy, y, now, walking);
       i++;
     }
-    for (const m of [this.body, this.head, this.ring, this.carry]) {
+    this.bodies.end();
+    for (const m of [this.ring, this.carry]) {
       m.count = i;
       m.instanceMatrix.needsUpdate = true;
       m.instanceColor.needsUpdate = true;
@@ -301,7 +270,7 @@ function turnToward(a, b, step) {
 
 /** Short fading trails behind moving figures: where everyone has been heading. */
 class Trails {
-  constructor(scene, terrain) {
+  constructor(scene, terrain, renderer) {
     this.terrain = terrain;
     this.points = new Map(); // id -> [{x, y, z, t}]
     this.maxPoints = 18;
@@ -318,6 +287,7 @@ class Trails {
     );
     this.lines.frustumCulled = false;
     this.lines.name = "trails";
+    this.tc = new THREE.Color();
     scene.add(this.lines);
   }
 
@@ -343,13 +313,15 @@ class Trails {
   update(now) {
     let n = 0;
     const p = this.pos, c = this.col;
-    for (const list of this.points.values()) {
+    for (const [id, list] of this.points) {
+      // Each trail is drawn in its walker's own color.
+      const k = this.colorOf?.(id, this.tc) ?? this.tc.setRGB(0.3, 0.85, 1.0);
       for (let i = 1; i < list.length; i++) {
         const a = list[i - 1], b = list[i];
-        const fa = Math.pow(1 - (now - a.t) / this.life, 2) * 0.9;
-        const fb = Math.pow(1 - (now - b.t) / this.life, 2) * 0.9;
+        const fa = Math.pow(1 - (now - a.t) / this.life, 2) * 0.8;
+        const fb = Math.pow(1 - (now - b.t) / this.life, 2) * 0.8;
         p.set([a.x, a.y, a.z, b.x, b.y, b.z], n * 6);
-        c.set([0.3 * fa, 0.85 * fa, 1.0 * fa, 0.3 * fb, 0.85 * fb, 1.0 * fb], n * 6);
+        c.set([k.r * fa, k.g * fa, k.b * fa, k.r * fb, k.g * fb, k.b * fb], n * 6);
         n++;
       }
     }

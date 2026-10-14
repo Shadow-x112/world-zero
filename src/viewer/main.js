@@ -2,10 +2,7 @@
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { EffectComposer, RenderPass, EffectPass, BloomEffect, SMAAEffect, SMAAPreset, ChromaticAberrationEffect, VignetteEffect } from "postprocessing";
 
 import { api, follow, CHUNK } from "./api.js";
 import { Terrain } from "./terrain.js";
@@ -25,7 +22,8 @@ const canvas = $("world");
 
 let renderer;
 try {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+  // Edges are smoothed in post-processing (SMAA), so the canvas itself needs none.
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, stencil: false, depth: true, powerPreference: "high-performance" });
 } catch {
   $("loadLabel").textContent = "This device cannot draw the world (WebGL is unavailable).";
   throw new Error("no WebGL");
@@ -49,18 +47,34 @@ controls.target.set(0, 0, 0);
 const terrain = new Terrain(scene);
 const sky = new Sky(scene, terrain);
 const resources = new Resources(scene, terrain);
-const walkers = new Walkers(scene, terrain);
+const walkers = new Walkers(scene, terrain, renderer);
+walkers.camera = camera;
 const ui = new Ui({ camera, controls, walkers, terrain, api, canvas });
 const fires = new Fires(scene, terrain);
 const snow = new Snow(scene);
 const pulse = new SeasonPulse(terrain.material);
 
-const composer = new EffectComposer(renderer);
+// Post-processing: only what is bright glows (the dark ground stays dark), edges are
+// smoothed, and at the very edge of the picture light splits faintly as through glass.
+const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType });
 composer.addPass(new RenderPass(scene, camera));
-// Only the bright lines bloom: the dark ground stays dark.
-const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.35, 0.3);
-composer.addPass(bloom);
-composer.addPass(new OutputPass());
+const bloom = new BloomEffect({ mipmapBlur: true, intensity: 1.15, luminanceThreshold: 0.32, luminanceSmoothing: 0.25, radius: 0.72 });
+const smaa = new SMAAEffect({ preset: SMAAPreset.HIGH });
+const aberration = new ChromaticAberrationEffect({ offset: new THREE.Vector2(0.0006, 0.0004), radialModulation: true, modulationOffset: 0.35 });
+const vignette = new VignetteEffect({ offset: 0.32, darkness: 0.55 });
+// (Edge smoothing first; the glass split blurs, so it needs a pass of its own.)
+const passes = {
+  smooth: new EffectPass(camera, smaa),
+  glow: new EffectPass(camera, bloom, vignette),
+  plain: new EffectPass(camera, vignette),
+  split: new EffectPass(camera, aberration),
+};
+let active = [];
+function setEffects(full) {
+  for (const p of active) composer.removePass(p); // (not disposed: they are reused)
+  active = full ? [passes.smooth, passes.glow, passes.split] : [passes.smooth, passes.plain];
+  for (const p of active) composer.addPass(p);
+}
 
 const quality = new Quality((tier, fps) => {
   applyQuality();
@@ -69,8 +83,9 @@ const quality = new Quality((tier, fps) => {
 
 function applyQuality() {
   const t = quality.tier;
-  bloom.enabled = t.bloom;
+  setEffects(t.bloom);
   walkers.setGlow(t.bloom);
+  walkers.bodies.setGlass(t.name !== "low");
   showQuality();
   resize();
 }
@@ -81,9 +96,7 @@ function resize() {
   const pr = Math.min(window.devicePixelRatio || 1, quality.tier.pixelRatio);
   renderer.setPixelRatio(pr);
   renderer.setSize(w, h, false);
-  composer.setPixelRatio(pr);
   composer.setSize(w, h);
-  bloom.resolution.set(Math.max(64, w * quality.tier.bloomScale), Math.max(64, h * quality.tier.bloomScale));
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   if (typeof ui !== "undefined") ui.applyViewShift();
@@ -347,7 +360,7 @@ function frame() {
   sky.dome.position.copy(camera.position);
   // Far away, figures grow a little so they stay findable (up to 3x at the widest view).
   const camDist = camera.position.distanceTo(controls.target);
-  walkers.update(performance.now(), THREE.MathUtils.clamp(camDist / 70, 1, 3));
+  walkers.update(performance.now(), THREE.MathUtils.clamp(camDist / 45, 1, 3), camDist);
   resources.update(dt, controls.target, camDist, quality.tier.near);
   groundLights();
   terrain.material.uniforms.uTime.value += dt;

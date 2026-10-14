@@ -9,7 +9,8 @@ import { formatCalendar, getCalendar } from "../core/time.ts";
 import { agentDetail, doing } from "../inspect.ts";
 import { feelingWords } from "../agents/emotions.ts";
 import { natureWords } from "../agents/personality.ts";
-import { skillWords } from "../agents/skill.ts";
+import { skillWords, SKILL_KINDS } from "../agents/skill.ts";
+import { TRAIT_KINDS } from "../agents/personality.ts";
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 /** Positions to a tenth of a tile: plenty for a viewer that glides between updates. */
@@ -66,6 +67,29 @@ export function agentSummary(agent: Agent, world: World) {
     feelings: feelingWords(agent),
     nature: natureWords(agent),
     skills: skillWords(agent),
+    look: agentLook(agent),
+  };
+}
+
+/**
+ * How an AI looks, for the viewer to draw it: only what anyone watching could see.
+ *   hue  its own color of light, from its quirks (a child's quirks are its parents'
+ *        blended, so families share related colors)
+ *   p    its nature (courage, cheer, wander, industry, warmth; -1..1)
+ *   sk   what its hands have learned (gathering, crafting, firecraft, building, cooking; 0-1)
+ *   em   how it feels right now (fear, sadness, loneliness, joy; 0-1)
+ *   tx   1 while poisoned
+ */
+export function agentLook(agent: Agent) {
+  const q = agent.quirk;
+  const qx = q[6 % q.length] ?? 0, qy = q[7 % q.length] ?? 0;
+  const hue = ((Math.atan2(qy, qx) / (2 * Math.PI)) + 1) % 1;
+  return {
+    hue: Math.round(hue * 1000) / 1000,
+    p: TRAIT_KINDS.map((k) => r2(agent.personality[k])),
+    sk: SKILL_KINDS.map((k) => r2(agent.skills[k])),
+    em: [r2(agent.emotions.fear), r2(agent.emotions.sadness), r2(agent.emotions.loneliness), r2(agent.emotions.joy)],
+    tx: agent.toxin > 0.01 ? 1 : 0,
   };
 }
 

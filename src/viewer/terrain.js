@@ -117,7 +117,7 @@ const fragment = /* glsl */ `
       vec2 d = xz - uLights[i].xz;
       l += uLights[i].w * exp(-dot(d, d) * 0.09);
     }
-    return min(l, 1.6);
+    return min(l, 1.0);
   }
 
   // The floor as glass: a panel slightly tilted, catching the horizon at low angles.
@@ -171,7 +171,7 @@ const fragment = /* glsl */ `
         // Worn paths: where feet go often, the seams burn brighter, so trodden ground reads as traced light.
         col += uSeam * vB.x * (0.004 + 0.32 * seam * (1.0 - far)) * uGlow;
         // Light gathers around the living.
-        col += uSeam * life * (0.4 * seam + 0.015) * uGlow;
+        col += uSeam * life * (0.2 * seam + 0.006) * uGlow;
         // Beyond the near ground, what lies on a tile is a small point of light.
         if (mat > 0.5) {
           float d = length(vWorld.xz - uResFocus.xz);

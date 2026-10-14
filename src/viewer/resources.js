@@ -211,8 +211,8 @@ function material(uniforms) {
 /** Which shape a material takes, and its proportions, from how it looks. */
 function shapeOf(looks) {
   const growth = looks.growth ?? 0, mass = looks.mass ?? 0, energy = looks.energy ?? 0;
-  if (energy >= 0.5) return { kind: CRYSTAL, height: 0.7 + 0.5 * energy, width: 0.8 + 0.8 * mass, lift: 0.35 + 0.5 * (1 - mass) };
-  if (growth >= 0.15) return { kind: PLANT, height: 0.35 + 0.75 * growth, width: 0.8 + 1.4 * mass, lift: 0 };
+  if (energy >= 0.5) return { kind: CRYSTAL, height: 0.42 + 0.3 * energy, width: 0.6 + 0.6 * mass, lift: 0.2 + 0.35 * (1 - mass) };
+  if (growth >= 0.15) return { kind: PLANT, height: 0.3 + 0.55 * growth, width: 0.8 + 1.4 * mass, lift: 0 };
   return { kind: STONE, height: 0.5 + 0.8 * mass, width: 0.6 + 0.9 * mass, lift: 0 };
 }
 

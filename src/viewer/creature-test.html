@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Creature test</title>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/", "postprocessing": "https://cdn.jsdelivr.net/npm/postprocessing@6.36.4/build/index.js", "three-custom-shader-material/vanilla": "https://cdn.jsdelivr.net/npm/three-custom-shader-material@6.4.0/vanilla/three-custom-shader-material.es.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #010307; overflow: hidden; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .names { position: fixed; left: 0; right: 0; bottom: 22px; display: flex; justify-content: space-around; font: 600 14px/1 ui-monospace, monospace; letter-spacing: 0.3em; color: #7fe9ff; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="names" id="names"><span>WALKING</span><span>GATHERING</span><span>EATING</span><span>TIMID</span><span>TALKING · CHILD</span><span>ASLEEP</span></div>
+<script type="module" src="/viewer/creature-test.js"></script>
+</body>
+</html>
