@@ -44,6 +44,7 @@ export const STATUS_PAGE = /* html */ `<!doctype html>
 <main>
   <h1>World Zero</h1>
   <p class="sub" id="sub">Connecting…</p>
+  <p class="sub"><a href="/view" style="color:var(--accent)">Enter the 3D world →</a></p>
 
   <section class="panel hidden" id="login">
     <h2>Creator key</h2>

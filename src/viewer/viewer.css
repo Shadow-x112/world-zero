@@ -1,0 +1,49 @@
+:root {
+  --bg: #03060b;
+  --ink: #cfeeff;
+  --dim: #5f7c8f;
+  --line: #2ee6ff;
+  --panel: rgba(4, 12, 20, 0.62);
+  --edge: rgba(46, 230, 255, 0.35);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; }
+body { font: 13px/1.45 var(--mono); -webkit-font-smoothing: antialiased; }
+#world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+
+.hud { position: fixed; pointer-events: none; z-index: 2; }
+.hud-top {
+  top: max(12px, env(safe-area-inset-top)); left: max(14px, env(safe-area-inset-left));
+  padding: 10px 14px; background: var(--panel); border: 1px solid var(--edge); border-radius: 4px;
+  box-shadow: 0 0 18px rgba(46, 230, 255, 0.12), inset 0 0 12px rgba(46, 230, 255, 0.06);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  max-width: calc(100vw - 28px);
+}
+.brand { letter-spacing: 0.32em; font-size: 12px; color: var(--line); text-shadow: 0 0 8px rgba(46, 230, 255, 0.7); }
+.clock { margin-top: 4px; font-size: 14px; color: var(--ink); }
+.meta { color: var(--dim); font-size: 12px; }
+
+.hud-load {
+  left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(320px, 80vw); text-align: center;
+  transition: opacity 0.8s ease;
+}
+.hud-load.done { opacity: 0; }
+.load-label { color: var(--line); letter-spacing: 0.12em; font-size: 12px; margin-bottom: 10px; text-shadow: 0 0 8px rgba(46, 230, 255, 0.6); }
+.load-bar { height: 2px; background: rgba(46, 230, 255, 0.15); overflow: hidden; }
+.load-bar span { display: block; height: 100%; width: 0; background: var(--line); box-shadow: 0 0 10px var(--line); transition: width 0.3s ease; }
+
+.hud-bottom {
+  bottom: max(12px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+  color: var(--dim); font-size: 11px; letter-spacing: 0.04em; white-space: nowrap;
+  transition: opacity 1.2s ease;
+}
+.hud-bottom.faded { opacity: 0; }
+.hint-touch { display: none; }
+@media (pointer: coarse) { .hint-mouse { display: none; } .hint-touch { display: inline; } }
+
+.hud-quality { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); color: var(--dim); font-size: 10px; opacity: 0.6; }
+
+.nojs { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) { .hud-load, .hud-bottom, .load-bar span { transition: none; } }

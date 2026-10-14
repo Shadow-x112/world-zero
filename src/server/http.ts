@@ -8,6 +8,7 @@
 // Public (read-only):
 //   GET  /health                         alive? (for the host's health check)
 //   GET  /                               status page
+//   GET  /view                           the 3D viewer (files under /viewer/)
 //   GET  /api/status                     date, population, speed, performance
 //   GET  /api/chronicle?since=&limit=    history entries after an id
 //   GET  /api/ais                        every living AI, one summary each
@@ -36,6 +37,7 @@ import { itemsReport, materialsTable, sheltersReport } from "../inspect.ts";
 import { lexiconReport } from "../agents/language.ts";
 import { chunkIndex, encodeChunk, fullPalette, publicPalette } from "./terrain.ts";
 import { RateLimiter } from "./limits.ts";
+import { ViewerFiles } from "./static.ts";
 
 /** Largest save the adopt endpoint accepts (compressed). */
 export const MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
@@ -43,6 +45,15 @@ export const MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
 export const DEFAULT_MAX_WATCHERS = 25;
 /** Most chunks one /api/chunkdata request may ask for. */
 export const MAX_CHUNKS_PER_REQUEST = 64;
+/** The viewer may load Three.js (pinned) from the CDN; everything else is ours. */
+const VIEWER_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "connect-src 'self'",
+  "worker-src 'self' blob:",
+].join("; ");
 /** Responses larger than this are compressed for clients that accept it. */
 const GZIP_OVER_BYTES = 1024;
 
@@ -73,6 +84,7 @@ export class WorldServer {
   private readonly keyHash: Buffer;
   private readonly opts: WorldServerOptions;
   private readonly limiter: RateLimiter;
+  private readonly viewer = new ViewerFiles();
   readonly maxWatchers: number;
 
   constructor(opts: WorldServerOptions) {
@@ -144,6 +156,18 @@ export class WorldServer {
         "Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'",
       });
       res.end(STATUS_PAGE);
+      return;
+    }
+    if ((path === "/view" || path.startsWith("/viewer/")) && method === "GET") {
+      const file = this.viewer.get(path === "/view" ? "index.html" : path.slice("/viewer/".length));
+      if (!file) return json(res, 404, { error: "not found" });
+      res.writeHead(200, {
+        "Content-Type": file.type,
+        "Content-Length": file.body.length,
+        "Cache-Control": file.name === "index.html" ? "no-cache" : "public, max-age=300",
+        "Content-Security-Policy": VIEWER_CSP,
+      });
+      res.end(file.body);
       return;
     }
     if (!path.startsWith("/api/")) return json(res, 404, { error: "not found" });

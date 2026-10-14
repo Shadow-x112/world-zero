@@ -412,3 +412,27 @@ test("chunk lists are read strictly", () => {
   assert.equal(parseChunkList("1,2,3"), null);
   assert.equal(parseChunkList("a,b"), null);
 });
+
+test("the viewer's files are served, and only them", async () => {
+  const world = World.create({ seed: 314 });
+  const { server, runner, port } = await serve(world);
+  server.attach(runner);
+  try {
+    const page = await call(port, "GET", "/view");
+    assert.equal(page.status, 200);
+    assert.match(String(page.headers["content-type"]), /text\/html/);
+    assert.match(page.body, /importmap/);
+    assert.match(String(page.headers["content-security-policy"]), /cdn\.jsdelivr\.net/, "Three.js may come from its pinned CDN");
+    assert.match(page.body, /three@\d+\.\d+\.\d+/, "and its version is pinned");
+    for (const f of ["main.js", "terrain.js", "api.js", "sky.js", "quality.js", "walkers.js", "viewer.css"]) {
+      const r = await call(port, "GET", `/viewer/${f}`);
+      assert.equal(r.status, 200, f);
+    }
+    assert.match(String((await call(port, "GET", "/viewer/main.js")).headers["content-type"]), /javascript/);
+    for (const bad of ["/viewer/../server/http.ts", "/viewer/%2e%2e%2fhttp.ts", "/viewer/.env", "/viewer/nope.js", "/viewer/"]) {
+      assert.equal((await call(port, "GET", bad)).status, 404, bad);
+    }
+  } finally {
+    await server.close();
+  }
+});

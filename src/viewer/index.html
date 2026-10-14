@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#03060b">
+<title>World Zero</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/viewer/viewer.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="world" aria-label="The world, seen from above"></canvas>
+
+  <header class="hud hud-top">
+    <div class="brand">WORLD ZERO</div>
+    <div class="clock" id="clock">connecting…</div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <div class="hud hud-load" id="loading" role="status" aria-live="polite">
+    <div class="load-label" id="loadLabel">Reaching the world…</div>
+    <div class="load-bar"><span id="loadBar"></span></div>
+  </div>
+
+  <footer class="hud hud-bottom" id="hint">
+    <span class="hint-mouse">drag to move · right-drag to turn · scroll to zoom · WASD / QE</span>
+    <span class="hint-touch">one finger to move · two to turn and zoom</span>
+  </footer>
+
+  <div class="hud hud-quality" id="quality" title="Rendering quality (adjusts itself)"></div>
+
+  <noscript><p class="nojs">The viewer needs JavaScript and WebGL.</p></noscript>
+  <script type="module" src="/viewer/main.js"></script>
+</body>
+</html>

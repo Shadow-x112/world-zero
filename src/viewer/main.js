@@ -1,0 +1,277 @@
+// The 3D viewer: a neon grid of the one world, live.
+
+import * as THREE from "three";
+import { MapControls } from "three/addons/controls/MapControls.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+import { api, follow, CHUNK } from "./api.js";
+import { Terrain } from "./terrain.js";
+import { Sky } from "./sky.js";
+import { Quality } from "./quality.js";
+import { Walkers } from "./walkers.js";
+
+const $ = (id) => document.getElementById(id);
+const canvas = $("world");
+
+// ---------- Renderer, scene, camera ----------
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+} catch {
+  $("loadLabel").textContent = "This device cannot draw the world (WebGL is unavailable).";
+  throw new Error("no WebGL");
+}
+renderer.setClearColor(0x010307, 1);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 2000);
+camera.position.set(0, 70, 70);
+
+const controls = new MapControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.screenSpacePanning = false;
+controls.minDistance = 6;
+controls.maxDistance = 420;
+controls.maxPolarAngle = 1.32;
+controls.zoomToCursor = true;
+controls.target.set(0, 0, 0);
+
+const terrain = new Terrain(scene);
+const sky = new Sky(scene, terrain);
+const walkers = new Walkers(scene, terrain);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+// Only the bright lines bloom: the dark ground stays dark.
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.85, 0.45, 0.32);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+const quality = new Quality((tier, fps) => {
+  applyQuality();
+  console.info(`[world-zero] ${fps.toFixed(0)} fps: rendering at ${tier.name} quality`);
+});
+
+function applyQuality() {
+  const t = quality.tier;
+  bloom.enabled = t.bloom;
+  walkers.setGlow(t.bloom);
+  $("quality").textContent = t.name;
+  resize();
+}
+
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const pr = Math.min(window.devicePixelRatio || 1, quality.tier.pixelRatio);
+  renderer.setPixelRatio(pr);
+  renderer.setSize(w, h, false);
+  composer.setPixelRatio(pr);
+  composer.setSize(w, h);
+  bloom.resolution.set(Math.max(64, w * quality.tier.bloomScale), Math.max(64, h * quality.tier.bloomScale));
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+applyQuality();
+
+// ---------- Keyboard (WASD to move, QE to turn, RF to zoom) ----------
+
+const keys = new Set();
+window.addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement) return;
+  keys.add(e.key.toLowerCase());
+  hideHint();
+});
+window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener("blur", () => keys.clear());
+
+const tmp = new THREE.Vector3();
+function keyboard(dt) {
+  if (keys.size === 0) return;
+  const dist = camera.position.distanceTo(controls.target);
+  const speed = dist * 0.9 * dt;
+  const forward = tmp.subVectors(controls.target, camera.position).setY(0).normalize();
+  const right = new THREE.Vector3(-forward.z, 0, forward.x);
+  const move = new THREE.Vector3();
+  if (keys.has("w") || keys.has("arrowup")) move.add(forward);
+  if (keys.has("s") || keys.has("arrowdown")) move.sub(forward);
+  if (keys.has("d") || keys.has("arrowright")) move.add(right);
+  if (keys.has("a") || keys.has("arrowleft")) move.sub(right);
+  if (move.lengthSq() > 0) {
+    move.normalize().multiplyScalar(speed);
+    camera.position.add(move);
+    controls.target.add(move);
+  }
+  const turn = (keys.has("q") ? 1 : 0) - (keys.has("e") ? 1 : 0);
+  if (turn) {
+    const off = camera.position.clone().sub(controls.target);
+    off.applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn * 1.4 * dt);
+    camera.position.copy(controls.target).add(off);
+  }
+  const zoom = (keys.has("f") ? 1 : 0) - (keys.has("r") ? 1 : 0);
+  if (zoom) {
+    const off = camera.position.clone().sub(controls.target);
+    const len = THREE.MathUtils.clamp(off.length() * Math.exp(zoom * 1.2 * dt), controls.minDistance, controls.maxDistance);
+    camera.position.copy(controls.target).add(off.setLength(len));
+  }
+}
+
+let hintTimer = setTimeout(hideHint, 12000);
+function hideHint() {
+  clearTimeout(hintTimer);
+  $("hint").classList.add("faded");
+}
+canvas.addEventListener("pointerdown", () => setTimeout(hideHint, 3000), { once: true });
+
+/** Keeps the camera's focus over the known world. */
+function clampTarget() {
+  const b = terrain.bounds;
+  if (!b.any) return;
+  const t = controls.target;
+  const cx = THREE.MathUtils.clamp(t.x, b.minX, b.maxX);
+  const cz = THREE.MathUtils.clamp(t.z, b.minZ, b.maxZ);
+  if (cx !== t.x || cz !== t.z) {
+    camera.position.x += cx - t.x;
+    camera.position.z += cz - t.z;
+    t.x = cx;
+    t.z = cz;
+  }
+  // Rest the focus on the ground so turning feels anchored.
+  const gy = terrain.groundY(t.x, t.z);
+  t.y += (gy - t.y) * 0.1;
+}
+
+// ---------- The ground: fetch what we lack, nearest first ----------
+
+let boot = null;
+const wanted = new Map(); // "cx,cy" -> revision to fetch
+let fetching = false;
+let loadTotal = 0;
+let loadDone = 0;
+let firstFocus = false;
+
+function want(list, focus) {
+  for (const [cx, cy, rev] of list) {
+    if (terrain.revision(cx, cy) === rev) continue;
+    wanted.set(`${cx},${cy}`, rev);
+  }
+  loadTotal = loadDone + wanted.size;
+  pump(focus);
+}
+
+async function pump(focus) {
+  if (fetching || wanted.size === 0) return;
+  fetching = true;
+  try {
+    while (wanted.size > 0) {
+      const f = focus ?? { x: controls.target.x, z: controls.target.z };
+      const list = [...wanted.keys()].map((k) => k.split(",").map(Number));
+      list.sort((a, b) => dist2(a, f) - dist2(b, f));
+      const batch = list.slice(0, 64);
+      for (const [cx, cy] of batch) wanted.delete(`${cx},${cy}`);
+      await api.chunks(batch, (chunks) => {
+        for (const c of chunks) terrain.set(c);
+        loadDone += chunks.length;
+        showLoad();
+      });
+    }
+  } catch (err) {
+    console.warn("[world-zero] could not fetch ground:", err);
+    setTimeout(() => {
+      fetching = false;
+      pump();
+    }, 5000);
+    return;
+  }
+  fetching = false;
+}
+
+function dist2([cx, cy], f) {
+  const x = cx * CHUNK + CHUNK / 2 - f.x;
+  const z = cy * CHUNK + CHUNK / 2 - f.z;
+  return x * x + z * z;
+}
+
+function showLoad() {
+  const total = Math.max(loadTotal, 1);
+  $("loadBar").style.width = `${Math.round((loadDone / total) * 100)}%`;
+  $("loadLabel").textContent = loadDone < total ? `Mapping the world · ${loadDone} / ${total}` : "";
+  if (loadDone >= total) $("loading").classList.add("done");
+}
+
+// ---------- The world's clock ----------
+
+async function refreshStatus() {
+  try {
+    const s = await api.status();
+    sky.setWorld(s);
+    $("clock").textContent = s.date.replace(/\s*\((day|night)\)$/, "");
+    const parts = [`${s.alive} alive`];
+    if (s.name) parts.unshift(s.name[0].toUpperCase() + s.name.slice(1));
+    if (s.generation > 1) parts.push(`world ${s.generation}`);
+    if (s.walls + s.roofs > 0) parts.push(`${s.walls + s.roofs} blocks built`);
+    if (s.paused) parts.push("time paused");
+    else if (s.speed > 1) parts.push(`${s.speed}× speed`);
+    $("meta").textContent = parts.join(" · ");
+  } catch (err) {
+    if (err.status === 503) $("clock").textContent = "waiting for the world…";
+  }
+}
+
+// ---------- Live ----------
+
+follow({
+  onSnapshot(s) {
+    if (boot !== s.boot) {
+      // A new server run (or the first visit): chunk revisions restarted, so ask again.
+      if (boot !== null) terrain.clear();
+      boot = s.boot;
+    }
+    walkers.snapshot(s.agents);
+    if (!firstFocus && s.agents.length) {
+      firstFocus = true;
+      const c = walkers.centroid();
+      controls.target.set(c.x, 0, c.z);
+      camera.position.set(c.x + 40, 62, c.z + 58);
+    }
+    want(s.chunks, { x: controls.target.x, z: controls.target.z });
+  },
+  onChanges(c) {
+    walkers.changes(c);
+    if (c.chunks) want(c.chunks);
+  },
+  onState(state) {
+    if (state !== "live" && !boot) $("loadLabel").textContent = "Waiting for room to watch…";
+  },
+});
+
+api.palette().then((p) => terrain.setPalette(p.materials)).catch(() => {});
+refreshStatus();
+setInterval(refreshStatus, 15000);
+
+// ---------- Frame loop ----------
+
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  keyboard(dt);
+  controls.update();
+  clampTarget();
+  const building = terrain.update() > 0 || wanted.size > 0 || fetching;
+  sky.update(dt);
+  walkers.update(performance.now());
+  terrain.material.uniforms.uTime.value += dt;
+  composer.render();
+  quality.sample(dt, building);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// For poking at in the browser console.
+window.worldZero = { scene, camera, controls, terrain, sky, walkers, quality };

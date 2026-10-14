@@ -41,7 +41,7 @@ Important events (deaths, firsts, milestones) are printed as they happen, marked
 
 ## The world's window (server)
 
-With `--port` (or the `PORT` environment variable) the world also serves a small web window: a status page at `/` and an API under `/api/` (status, chronicle, AIs, one AI, reports, the ground in chunks, how materials look, and a live stream of changes). Anyone may watch. Changing anything, downloading the world, or seeing what is hidden (the seed, materials' true properties) needs the creator key (`CREATOR_KEY`, or a key made once and kept in `<data>/creator-key.txt`). The full list of routes is at the top of `src/server/http.ts`.
+With `--port` (or the `PORT` environment variable) the world also serves a small web window: the 3D viewer at `/view`, a status page at `/` and an API under `/api/` (status, chronicle, AIs, one AI, reports, the ground in chunks, how materials look, and a live stream of changes). Anyone may watch. Changing anything, downloading the world, or seeing what is hidden (the seed, materials' true properties) needs the creator key (`CREATOR_KEY`, or a key made once and kept in `<data>/creator-key.txt`). The full list of routes is at the top of `src/server/http.ts`.
 
 | Setting | Meaning |
 | --- | --- |
@@ -89,6 +89,7 @@ src/items/     made things: the hidden crafting rules, wear, items on the ground
 src/world/     endless chunked grid, world generation, grid upkeep
 src/persist/   saving, loading, backups, the one-keeper lock
 src/server/    the world's window: web API, live stream, status page
+src/viewer/    the 3D viewer (plain browser JavaScript + Three.js)
 src/inspect.ts text descriptions of AIs
 src/status.ts  the world's vital signs
 src/main.ts    entry point
