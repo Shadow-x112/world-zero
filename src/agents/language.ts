@@ -20,6 +20,7 @@ import type { AgentContext } from "./movement.ts";
 import { feel } from "./emotions.ts";
 import { flamesNear } from "../world/fire.ts";
 import { describe } from "../materials/registry.ts";
+import { experienceAt } from "./building-sense.ts";
 
 /** One AI's word for one concept, and how settled it is in the mouth. */
 export interface Lexeme {
@@ -64,6 +65,8 @@ export function conceptLabel(world: World, concept: string): string {
   if (concept === "home") return "home";
   if (concept === "danger") return "danger";
   if (concept === "world") return "the world";
+  if (concept === "wall") return "a wall";
+  if (concept === "roof") return "a roof";
   if (concept.startsWith("material:")) {
     const type = world.materials.get(Number(concept.slice(9)));
     return type ? `the ${describe(type.props).replace(/^an? /, "")}` : "a material";
@@ -120,7 +123,24 @@ function coin(agent: Agent, concept: string, world: World): void {
       `${agent.label}, grown old and far-walked, began to use a sound for everything there is: "${word}".`,
       { agentId: agent.id, word },
     );
+  } else if ((concept === "wall" || concept === "roof") && world.isFirst(`word:${concept}`)) {
+    world.chronicle.add(
+      world.tick,
+      "language",
+      `${agent.label} began to use a sound for ${conceptLabel(world, concept)}, a thing its own hands had made: "${word}".`,
+      { agentId: agent.id, word, concept },
+    );
   }
+}
+
+/** Pieces of a kind it must have built (and learned from) before it needs a word for them. */
+export const BUILT_FOR_WORD = 6;
+
+function hasWallBeside(world: World, x: number, y: number): boolean {
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    if ((ox || oy) && world.grid.peek("wall", x + ox, y + oy) !== 0) return true;
+  }
+  return false;
 }
 
 /** The concepts alive in this AI's moment right now, nearest the heart first. */
@@ -137,7 +157,12 @@ function relevantConcepts(agent: Agent, other: Agent | null, ctx: AgentContext):
     }
   }
   if (other) out.push(`person:${other.id}`);
-  if (agent.nest && Math.hypot(agent.nest.x - agent.x, agent.nest.y - agent.y) <= 3) out.push("home");
+  if (agent.nest && Math.hypot(agent.nest.x - agent.x, agent.nest.y - agent.y) <= 3) {
+    out.push("home");
+    // What home is made of comes up at home.
+    if (world.grid.peek("roof", agent.nest.x, agent.nest.y) !== 0) out.push("roof");
+    if (hasWallBeside(world, agent.nest.x, agent.nest.y)) out.push("wall");
+  }
   if (agent.lexicon["world"]) out.push("world"); // the old stories get told
   return out;
 }
@@ -157,6 +182,9 @@ export function coinWords(agent: Agent, ctx: AgentContext): void {
     if (k.tasted && k.timesEaten >= 3) candidates.push(`material:${id}`);
   }
   if (agent.nest) candidates.push("home");
+  // What its hands have made, often enough to need a sound for.
+  if (experienceAt(agent, "wall") >= BUILT_FOR_WORD) candidates.push("wall");
+  if (experienceAt(agent, "frame") + experienceAt(agent, "cover") >= BUILT_FOR_WORD) candidates.push("roof");
   for (const [id, bond] of Object.entries(agent.bonds)) {
     if (bond.affection >= 0.5 && ctx.population.get(Number(id))) candidates.push(`person:${id}`);
   }

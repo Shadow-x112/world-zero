@@ -219,3 +219,63 @@ export function studyShelter(agent: Agent, world: World, x: number, y: number, s
   }
   if (best.size > 0) feel(agent, "wonder", 0.05);
 }
+
+// --- Passing it on ---------------------------------------------------------------
+
+/** A lesson is sure enough to pass on once it has been learned this often, and this firmly. */
+export const TEACH_SURE_N = 5;
+export const TEACH_SURE_V = 0.4;
+/** How far one telling moves the learner toward the teacher's view. */
+export const TEACH_SHARE = 0.5;
+/** Being told gets you this sure, at most; your own life takes you the rest. */
+export const TOLD_CAP = 0.6;
+
+/**
+ * The lesson about building most worth passing from one to another: the one the
+ * teacher is surest of where the learner's view differs most from its own.
+ */
+export function lessonToTeach(teacher: Agent, learner: Agent): { use: Use; material: number; v: number } | null {
+  let best: { use: Use; material: number; v: number } | null = null;
+  let gap = 0.3; // differences smaller than this aren't worth stopping for
+  for (const key of Object.keys(teacher.buildSense.lessons).sort()) {
+    const l = teacher.buildSense.lessons[key];
+    if (l.n < TEACH_SURE_N || Math.abs(l.v) < TEACH_SURE_V) continue;
+    const [use, material] = splitKey(key);
+    const theirs = learner.buildSense.lessons[key];
+    const own = theirs ? theirs.v : CURIOSITY;
+    const told = Math.max(-TOLD_CAP, Math.min(TOLD_CAP, l.v));
+    if (Math.sign(own) === Math.sign(told) && Math.abs(own) >= Math.abs(told)) continue; // knows it already
+    const d = Math.abs(told - own);
+    if (d > gap) [best, gap] = [{ use, material, v: l.v }, d];
+  }
+  return best;
+}
+
+/** One telling: the learner's view moves toward the teacher's, never past what being told can make sure. */
+export function tellLesson(learner: Agent, use: Use, material: number, v: number): void {
+  const key = lessonKey(use, material);
+  const l = (learner.buildSense.lessons[key] ??= { v: CURIOSITY, n: 0 });
+  const target = Math.max(-TOLD_CAP, Math.min(TOLD_CAP, v));
+  if (Math.sign(l.v) === Math.sign(target) && Math.abs(l.v) >= Math.abs(target)) return; // already as sure
+  l.v += TEACH_SHARE * (target - l.v);
+  l.n = Math.min(9999, l.n + 1);
+}
+
+/** How a lesson would be put, for the chronicle. */
+export function phraseLesson(use: Use, what: string, v: number): string {
+  if (v >= 0) {
+    if (use === "wall") return `that ${what} makes a good wall`;
+    if (use === "frame") return `that ${what} will hold a roof up`;
+    return `that ${what} lies well over poles`;
+  }
+  if (use === "wall") return `that ${what} makes a poor wall`;
+  if (use === "frame") return `that ${what} won't hold a roof up`;
+  return `that ${what} won't do to cover a roof`;
+}
+
+/** How much it has built at a use, by lessons learned (for words and firsts). */
+export function experienceAt(agent: Agent, use: Use): number {
+  let n = 0;
+  for (const [key, l] of Object.entries(agent.buildSense.lessons)) if (key.startsWith(use + ":")) n += l.n;
+  return n;
+}

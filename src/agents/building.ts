@@ -14,7 +14,7 @@
 // each material at each use (building-sense.ts): from its nights, from what
 // fell or rotted, and from neighbours' snugger places.
 
-import { FORM, formOf } from "../building/pieces.ts";
+import { FORM, GROUND, ROLE, formOf } from "../building/pieces.ts";
 import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { World } from "../core/world.ts";
 import { BRICK_ID, describe, type MaterialType } from "../materials/registry.ts";
@@ -305,6 +305,7 @@ function recordFirsts(agent: Agent, world: World, p: Placement, type: MaterialTy
       agentId: agent.id, x: p.x, y: p.y, material: type.id,
     });
   }
+  if (p.level === "roof") roofFirsts(agent, world, p, type);
   if (p.level === "roof" && world.isFirst("roof")) {
     world.chronicle.add(world.tick, "building", `${agent.label} raised ${what} over the place where it sleeps: the first cover overhead.`, {
       agentId: agent.id, x: p.x, y: p.y, material: type.id,
@@ -314,6 +315,23 @@ function recordFirsts(agent: Agent, world: World, p: Placement, type: MaterialTy
     world.chronicle.add(world.tick, "building", `${agent.label}'s sleeping place is walled in and covered: the first true shelter.`, {
       agentId: agent.id, x: nest.x, y: nest.y,
     });
+  }
+}
+
+/** The first of each way of making a roof: leaning poles, spanning walls, laying something over poles. */
+export function roofFirsts(agent: Agent, world: World, p: Placement, type: MaterialType): void {
+  const what = describe(type.props);
+  const pieces = world.pieces.at(p.x, p.y, ROLE.roof);
+  const poles = pieces.filter((q) => q.form === FORM.pole);
+  const at = { agentId: agent.id, x: p.x, y: p.y, material: type.id };
+  if (poles.some((q) => q.on.includes(GROUND) && q.by === agent.id) && world.isFirst("leanTo")) {
+    world.chronicle.add(world.tick, "building", `${agent.label} leaned poles of ${what} from its wall down to the ground: the first lean-to.`, at);
+  }
+  if (poles.some((q) => q.on.length >= 2 && !q.on.includes(GROUND) && q.by === agent.id) && world.isFirst("span")) {
+    world.chronicle.add(world.tick, "building", `${agent.label} laid poles of ${what} across from one wall to another: the first roof that spans.`, at);
+  }
+  if (formOf(type) !== FORM.pole && pieces.some((q) => q.form !== FORM.pole && q.by === agent.id) && world.isFirst("thatch")) {
+    world.chronicle.add(world.tick, "building", `${agent.label} laid ${what} over the poles above its sleeping place: the first covered roof.`, at);
   }
 }
 

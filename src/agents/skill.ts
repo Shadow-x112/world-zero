@@ -18,6 +18,8 @@ import { feel } from "./emotions.ts";
 import { harmPerUnit, describe } from "../materials/registry.ts";
 import type { AgentContext } from "./movement.ts";
 import { sightRadius } from "./senses.ts";
+import { lessonToTeach, phraseLesson, tellLesson } from "./building-sense.ts";
+import { hear } from "./language.ts";
 
 export type SkillKind = "gathering" | "crafting" | "firecraft" | "building" | "cooking";
 
@@ -165,7 +167,7 @@ export function teachNearby(agent: Agent, ctx: AgentContext): void {
       if (theirs?.curative) continue;
       tellAbout(learner, Number(id), k, world.tick).curative = true;
       const type = world.materials.get(Number(id));
-      lessonLearned(world, agent, learner, `the ${type ? describe(type.props) + " thing" : "thing"} that loosens poison`);
+      lessonLearned(world, agent, learner, `${type ? describe(type.props) : "the thing"} that loosens poison`);
       return;
     }
 
@@ -195,11 +197,25 @@ export function teachNearby(agent: Agent, ctx: AgentContext): void {
       lessonLearned(world, agent, learner, "which things are good to eat");
       return;
     }
+
+    // 4. What it has learned about building: what makes a wall, what holds a roof up.
+    const lesson = lessonToTeach(agent, learner);
+    if (lesson) {
+      tellLesson(learner, lesson.use, lesson.material, lesson.v);
+      const type = world.materials.get(lesson.material);
+      const what = type ? describe(type.props) : "that stuff";
+      // Said with a word for it, if the teacher has one: the word goes with the lesson.
+      const concept = lesson.use === "wall" ? "wall" : "roof";
+      const word = agent.lexicon[concept];
+      if (word) hear(learner, concept, word.w, world);
+      lessonLearned(world, agent, learner, phraseLesson(lesson.use, what, lesson.v), "buildingLesson");
+      return;
+    }
   }
 }
 
 /** The lesson lands: knowledge, warmth, and - once in the world - history. */
-function lessonLearned(world: World, teacher: Agent, learner: Agent, what: string): void {
+function lessonLearned(world: World, teacher: Agent, learner: Agent, what: string, first?: string): void {
   const toTeacher = learner.bondWith(teacher.id);
   if (learner.bonds[teacher.id]) {
     toTeacher.trust = Math.min(1, toTeacher.trust + 0.03);
@@ -214,6 +230,11 @@ function lessonLearned(world: World, teacher: Agent, learner: Agent, what: strin
   feel(teacher, "contentment", 0.15);
   if (world.isFirst("lesson")) {
     world.chronicle.add(world.tick, "teaching", `The first lesson: ${teacher.label} showed ${learner.label} ${what}.`, {
+      teacher: teacher.id,
+      learner: learner.id,
+    });
+  } else if (first && world.isFirst(first)) {
+    world.chronicle.add(world.tick, "teaching", `${teacher.label} showed ${learner.label} ${what}: the first knowledge of building passed on.`, {
       teacher: teacher.id,
       learner: learner.id,
     });
