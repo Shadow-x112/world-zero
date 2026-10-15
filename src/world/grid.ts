@@ -163,6 +163,12 @@ export class Grid {
     return array ? array[(y - cy * CHUNK_SIZE) * CHUNK_SIZE + (x - cx * CHUNK_SIZE)] : 0;
   }
 
+  /** Marks a tile's chunk as changed to the eye (something on it moved), without touching any layer. */
+  touchTile(x: number, y: number): void {
+    const chunk = this.viewChunk(Math.floor(x / CHUNK_SIZE), Math.floor(y / CHUNK_SIZE));
+    if (chunk) chunk.revision++;
+  }
+
   set(layer: string, x: number, y: number, value: number): void {
     const chunk = this.getChunk(Math.floor(x / CHUNK_SIZE), Math.floor(y / CHUNK_SIZE));
     const array = chunk.layer(layer);

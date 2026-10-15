@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Built Pieces Test</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "postprocessing": "https://cdn.jsdelivr.net/npm/postprocessing@6.36.4/build/index.js",
+    "three-custom-shader-material/vanilla": "https://cdn.jsdelivr.net/npm/three-custom-shader-material@6.4.0/vanilla/three-custom-shader-material.es.js"
+  }
+}
+</script>
+<style>
+  :root { --bg: #010307; --ink: #bfefff; --dim: #5d8aa0; --line: rgba(120, 220, 255, 0.28); --btn: rgba(8, 20, 30, 0.82); }
+  :root[data-theme="light"] { --bg: #010307; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .bar { position: fixed; left: 16px; right: 16px; bottom: 16px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  button { background: var(--btn); color: var(--ink); border: 1px solid var(--line); padding: 8px 12px; font: inherit; letter-spacing: 0.04em; cursor: pointer; border-radius: 2px; }
+  button:hover, button[aria-pressed="true"] { border-color: #7fe6ff; box-shadow: 0 0 12px rgba(80, 210, 255, 0.35); }
+  .key { position: fixed; left: 16px; top: 16px; max-width: min(360px, calc(100% - 32px)); background: rgba(1, 6, 10, 0.7); border: 1px solid var(--line); padding: 10px 12px; }
+  .key h1 { font-size: 13px; margin: 0 0 6px; letter-spacing: 0.12em; text-transform: uppercase; }
+  .key p { margin: 2px 0; color: var(--dim); }
+  .key b { color: var(--ink); font-weight: normal; }
+  @media (max-width: 600px) { .key { font-size: 11px; } button { padding: 7px 9px; } }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Test scene of built pieces"></canvas>
+<div class="key">
+  <h1>Built pieces</h1>
+  <p><b>Middle:</b> a hut. Stone, brick and flint walls, grove poles across, fibre woven over them. Three builders.</p>
+  <p><b>Right:</b> a lean-to, grove poles from one stone wall, herb bundles over them.</p>
+  <p><b>Back left:</b> a grove palisade, and a novice's fibre screen.</p>
+  <p><b>Back right:</b> one stone wall, freshest to nearly gone. The last is failing.</p>
+  <p>Drag to look around. Scroll to zoom.</p>
+</div>
+<div class="bar">
+  <button id="rez">Build it again</button>
+  <button id="fall">Take a wall away</button>
+  <button id="reset">Reset</button>
+  <button id="see" aria-pressed="false">See into the hut</button>
+  <button id="spin" aria-pressed="true">Turn</button>
+</div>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { EffectComposer, RenderPass, EffectPass, BloomEffect, SMAAEffect, SMAAPreset, VignetteEffect } from "postprocessing";
+import { Pieces } from "./pieces.js";
+import { sharedEnvironment } from "./creatures.js";
+
+const canvas = document.getElementById("c");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#010307");
+const camera = new THREE.PerspectiveCamera(36, 1, 0.05, 200);
+camera.position.set(5, 8, 16);
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(3, 0.3, 3);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+const env = sharedEnvironment(renderer); // the same dark sky the bodies reflect
+scene.add(new THREE.HemisphereLight(0x1a3040, 0x000000, 0.25));
+const sun = new THREE.DirectionalLight(0x9fd8ff, 0.25);
+sun.position.set(5, 10, 3);
+scene.add(sun);
+
+const uniforms = { uTime: { value: 0 }, uGlow: { value: 1 }, uFogDensity: { value: 0.02 } };
+
+// Ground: black glass panels with hairline seams.
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60).rotateX(-Math.PI / 2),
+  new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: `varying vec3 vP; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `
+      varying vec3 vP; uniform float uGlow;
+      void main(){
+        vec2 g = abs(fract(vP.xz - 0.5) - 0.5) / fwidth(vP.xz);
+        float seam = 1.0 - min(min(g.x, g.y), 1.0);
+        float d = length(vP.xz - vec2(2.0, 2.5));
+        vec3 c = vec3(0.004, 0.012, 0.02) + vec3(0.2, 0.7, 1.0) * seam * 0.22 * exp(-d * 0.12) * uGlow;
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  }),
+);
+scene.add(ground);
+
+// Colours as the viewer gives them: materials by how they look; each AI its own hue.
+function lookColor(looks) {
+  const growth = looks.growth ?? 0, energy = looks.energy ?? 0, mass = looks.mass ?? 0;
+  const c = new THREE.Color();
+  if (energy >= 0.5) c.setHSL(0.8 - (energy - 0.5) * 0.1, 0.95, 0.66);
+  else if (growth >= 0.35) c.setHSL(0.4 - (growth - 0.35) * 0.12, 0.9, 0.55);
+  else if (growth > 0.15) c.setHSL(0.24, 0.85, 0.56);
+  else if (mass >= 0.55) c.setHSL(0.56, 0.55, 0.78);
+  else c.setHSL(0.08, 0.9, 0.6);
+  return c;
+}
+const hues = { 1: 0.02, 2: 0.55, 3: 0.83, 4: 0.12, 5: 0.33, 6: 0.62, 7: 0.95 };
+
+const data = await (await fetch("./pieces-scene.json")).json();
+const pieces = new Pieces(scene, {
+  url: "./pieces.glb",
+  env,
+  uniforms,
+  colorOf: (m) => lookColor(data.materials[m] ?? {}),
+  hueOf: (by) => new THREE.Color().setHSL(hues[by] ?? 0.5, 0.9, 0.6),
+  groundY: () => 0,
+});
+await pieces.ready;
+const clock = new THREE.Clock();
+const now = () => clock.getElapsedTime();
+pieces.set(data.before, now());
+
+const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType });
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new EffectPass(camera, new SMAAEffect({ preset: SMAAPreset.HIGH })));
+composer.addPass(new EffectPass(camera, new BloomEffect({ mipmapBlur: true, intensity: 1.2, luminanceThreshold: 0.3, luminanceSmoothing: 0.25, radius: 0.72 }), new VignetteEffect({ darkness: 0.55 })));
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  composer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize);
+resize();
+
+const btn = (id, fn) => document.getElementById(id).addEventListener("click", fn);
+btn("rez", () => {
+  pieces.set([], now());
+  pieces.set(data.before, now());
+});
+btn("fall", () => pieces.set(data.after, now()));
+btn("reset", () => {
+  pieces.shown.clear();
+  pieces.loaded = false;
+  pieces.set(data.before, now());
+});
+btn("see", (e) => {
+  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+  e.currentTarget.setAttribute("aria-pressed", String(on));
+  pieces.follow(on ? { x: 0, y: 0 } : null);
+});
+btn("spin", (e) => {
+  controls.autoRotate = !controls.autoRotate;
+  e.currentTarget.setAttribute("aria-pressed", String(controls.autoRotate));
+});
+pieces.seeWithin = 0; // (only the button sees through here)
+
+renderer.setAnimationLoop(() => {
+  uniforms.uTime.value = now();
+  controls.update();
+  pieces.update(now(), camera);
+  composer.render();
+});
+window.ready = true;
+window.view = { camera, controls, pieces, data, now };
+</script>
+</body>
+</html>

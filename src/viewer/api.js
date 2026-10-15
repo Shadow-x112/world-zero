@@ -9,6 +9,20 @@ function b64ToBytes(s) {
   return out;
 }
 
+/** Numbers per piece in a chunk's pieces list (see src/server/terrain.ts). */
+const PIECE_FIELDS = 14;
+
+/** What is built in a chunk, piece by piece (null from a server whose world has no pieces). */
+function decodePieces(list) {
+  if (!list) return null;
+  const out = [];
+  for (let i = 0; i + PIECE_FIELDS <= list.length; i += PIECE_FIELDS) {
+    const k = (j) => list[i + j] / 1000;
+    out.push({ id: list[i], f: list[i + 1], m: list[i + 2], r: list[i + 3], x: k(4), y: k(5), z: k(6), l: k(7), w: k(8), t: k(9), yaw: k(10), pitch: k(11), hp: list[i + 12], by: list[i + 13] });
+  }
+  return out;
+}
+
 /** Turns the server's packed chunk into typed arrays (heights are little-endian Int16). */
 export function decodeChunk(c) {
   const hb = b64ToBytes(c.height);
@@ -30,6 +44,7 @@ export function decodeChunk(c) {
     roof: opt("roof"),
     roofHp: opt("roofHp"),
     fire: opt("fire"),
+    pieces: decodePieces(c.pieces),
   };
 }
 

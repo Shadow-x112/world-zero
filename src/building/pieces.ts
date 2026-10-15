@@ -23,6 +23,7 @@
 
 import type { World } from "../core/world.ts";
 import { hashFloat } from "../core/rng.ts";
+import { CHUNK_SIZE } from "../world/chunk.ts";
 import type { MaterialType } from "../materials/registry.ts";
 import type { Agent } from "../agents/agent.ts";
 import { feel } from "../agents/emotions.ts";
@@ -228,6 +229,11 @@ export interface PieceEvents {
   tiles: Set<number>;
 }
 
+/** The chunk a piece lies in, as a key. */
+function chunkKeyOf(p: Piece): number {
+  return tileKey(Math.floor(Math.round(p.x) / CHUNK_SIZE), Math.floor(Math.round(p.y) / CHUNK_SIZE));
+}
+
 export class PieceStore {
   /** Every piece, by id. */
   readonly all = new Map<number, Piece>();
@@ -237,6 +243,8 @@ export class PieceStore {
   private resting = new Map<number, Set<number>>();
   /** Standing pieces by every tile they reach over (for shelter and walking). */
   private over = new Map<number, Set<number>>();
+  /** Every piece, rubble too, by the chunk it lies in (for the viewer). */
+  private byChunk = new Map<number, Set<number>>();
   seq = 1;
 
   get size(): number {
@@ -266,6 +274,13 @@ export class PieceStore {
     return [...ids].sort((a, b) => a - b).map((i) => this.all.get(i)!);
   }
 
+  /** Every piece lying in a chunk (standing or fallen), by id. */
+  inChunk(cx: number, cy: number): Piece[] {
+    const ids = this.byChunk.get(tileKey(cx, cy));
+    if (!ids) return [];
+    return [...ids].sort((a, b) => a - b).map((i) => this.all.get(i)!);
+  }
+
   /** Pieces resting on a piece. */
   onTopOf(id: number): Piece[] {
     const ids = this.resting.get(id);
@@ -280,6 +295,10 @@ export class PieceStore {
   }
 
   private index(p: Piece): void {
+    const c = chunkKeyOf(p);
+    let cs = this.byChunk.get(c);
+    if (!cs) this.byChunk.set(c, (cs = new Set()));
+    cs.add(p.id);
     if (p.role !== ROLE.rubble) {
       const k = tileKey(p.tx, p.ty);
       let s = this.byTile.get(k);
@@ -301,6 +320,12 @@ export class PieceStore {
   }
 
   private unindex(p: Piece): void {
+    const c = chunkKeyOf(p);
+    const cs = this.byChunk.get(c);
+    if (cs) {
+      cs.delete(p.id);
+      if (cs.size === 0) this.byChunk.delete(c);
+    }
     for (const t of p.reach ?? []) {
       const o = this.over.get(t);
       if (o) {
@@ -736,6 +761,7 @@ export function emptyEvents(): PieceEvents {
 /** Notes every tile a piece reaches over (and its own) as changed. */
 export function touch(ev: PieceEvents, p: Piece): void {
   ev.tiles.add(tileKey(p.tx, p.ty));
+  ev.tiles.add(tileKey(Math.round(p.x), Math.round(p.y))); // (where it lies, if it has fallen)
   for (const t of p.reach ?? tilesUnder(p).map(([x, y]) => tileKey(x, y))) ev.tiles.add(t);
 }
 
@@ -800,7 +826,7 @@ export function wear(world: World): PieceEvents {
     let whole = Math.floor(loss);
     if (hashFloat(seed, 8310, p.id, 0, world.tick) < loss - whole) whole++;
     p.hp -= whole;
-    if (p.role !== ROLE.rubble) touch(ev, p);
+    touch(ev, p); // (rubble too: the eye sees it darken)
     if (p.hp <= 0) {
       gone.push(p);
       if (p.role !== ROLE.rubble) ev.rotted.push({ piece: p, role: p.role });

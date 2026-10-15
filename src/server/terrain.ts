@@ -12,6 +12,8 @@ import type { Grid } from "../world/grid.ts";
 import type { MaterialRegistry } from "../materials/registry.ts";
 import { VISIBLE } from "../materials/registry.ts";
 import { FULL_HP } from "../building/structures.ts";
+import { LEVEL_Z } from "../building/pieces.ts";
+import type { World } from "../core/world.ts";
 
 export interface ChunkView {
   cx: number;
@@ -30,7 +32,17 @@ export interface ChunkView {
   roof?: string;
   roofHp?: string;
   fire?: string;
+  /**
+   * What is built here, piece by piece (present whenever the world is made of pieces):
+   * 14 numbers each - id, form, material, role, x, y, z above the ground, length, width,
+   * thickness, yaw, pitch (positions and sizes in thousandths of a tile, angles in
+   * thousandths of a radian), soundness (0-1000), builder.
+   */
+  pieces?: number[];
 }
+
+/** Numbers per piece in a chunk's pieces list. */
+export const PIECE_FIELDS = 14;
 
 function b64(bytes: Uint8Array): string {
   return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
@@ -52,7 +64,7 @@ function hasAny(layer: ArrayLike<number> | undefined): boolean {
 }
 
 /** Reads a chunk for the viewer. Only peeks at layers: looking never creates or changes one. */
-export function encodeChunk(chunk: Chunk): ChunkView {
+export function encodeChunk(chunk: Chunk, world?: World): ChunkView {
   const heights = new Int16Array(TILES_PER_CHUNK);
   heights.set(chunk.peekLayer("height") ?? new Int16Array(TILES_PER_CHUNK));
   const bytes = new Uint8Array(heights.buffer);
@@ -82,6 +94,15 @@ export function encodeChunk(chunk: Chunk): ChunkView {
     view.roofHp = b64(squeeze(chunk.peekLayer("roofHp") ?? zero, hp));
   }
   if (hasAny(chunk.peekLayer("fire"))) view.fire = b64(squeeze(chunk.peekLayer("fire")!));
+  if (world) {
+    const out: number[] = [];
+    const k = (v: number) => Math.round(v * 1000);
+    for (const p of world.pieces.inChunk(chunk.cx, chunk.cy)) {
+      const ground = world.grid.heightAt(Math.round(p.x), Math.round(p.y)) * LEVEL_Z;
+      out.push(p.id, p.form, p.material, p.role, k(p.x), k(p.y), k(p.z - ground), k(p.len), k(p.wid), k(p.thk), k(p.yaw), k(p.pitch), Math.max(0, p.hp), p.by);
+    }
+    view.pieces = out;
+  }
   return view;
 }
 

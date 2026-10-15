@@ -5,7 +5,9 @@ import { MapControls } from "three/addons/controls/MapControls.js";
 import { EffectComposer, RenderPass, EffectPass, BloomEffect, SMAAEffect, SMAAPreset, ChromaticAberrationEffect, VignetteEffect } from "postprocessing";
 
 import { api, follow, CHUNK } from "./api.js";
-import { Terrain } from "./terrain.js";
+import { Terrain, lookColor } from "./terrain.js";
+import { Pieces } from "./pieces.js";
+import { sharedEnvironment } from "./creatures.js";
 import { Resources } from "./resources.js";
 import { Sky } from "./sky.js";
 import { Quality } from "./quality.js";
@@ -49,6 +51,26 @@ const sky = new Sky(scene, terrain);
 const resources = new Resources(scene, terrain, renderer);
 const walkers = new Walkers(scene, terrain, renderer);
 walkers.camera = camera;
+// What has been built: every piece, in its material's shape, a trace of its builder's colour.
+const tu = terrain.material.uniforms;
+const pieceColors = new Map();
+const built = new Pieces(scene, {
+  env: sharedEnvironment(renderer),
+  uniforms: { uTime: tu.uTime, uGlow: tu.uGlow, uFogDensity: tu.uFogDensity },
+  colorOf: (m) => {
+    const looks = terrain.looks.get(m);
+    if (!looks) return null;
+    let c = pieceColors.get(m);
+    if (!c || c.looks !== looks) pieceColors.set(m, (c = { looks, color: lookColor(looks) }));
+    return c.color;
+  },
+  hueOf: (id) => {
+    const h = walkers.list.get(id)?.look?.hue;
+    return h === undefined ? null : new THREE.Color().setHSL(h, 0.85, 0.6);
+  },
+  groundY: (x, y) => terrain.groundY(x, y),
+});
+let builtWait = 0;
 const ui = new Ui({ camera, controls, walkers, terrain, api, canvas });
 const fires = new Fires(scene, terrain);
 const snow = new Snow(scene);
@@ -86,6 +108,7 @@ function applyQuality() {
   setEffects(t.bloom);
   walkers.setGlow(t.bloom);
   walkers.bodies.setGlass(t.name !== "low");
+  built.setQuality(t.name);
   showQuality();
   resize();
 }
@@ -362,6 +385,16 @@ function frame() {
   const camDist = camera.position.distanceTo(controls.target);
   walkers.update(performance.now(), THREE.MathUtils.clamp(camDist / 45, 1, 3), camDist);
   resources.update(dt, controls.target, camDist, quality.tier.near);
+  builtWait -= dt;
+  if (builtWait <= 0) {
+    builtWait = 0.4;
+    built.gather(terrain, controls.target, Resources.rangeFor(camDist, quality.tier.near), tu.uTime.value);
+    // The one being followed, asleep: the roof over it thins so it can be seen.
+    const f = ui.selected !== null ? walkers.list.get(ui.selected) : null;
+    const spot = f && f.a === "sleep" && f.dx !== undefined ? { x: Math.round(f.dx), y: Math.round(f.dy) } : null;
+    if ((spot?.x ?? null) !== (built.followed?.x ?? null) || (spot?.y ?? null) !== (built.followed?.y ?? null)) built.follow(spot);
+  }
+  built.update(tu.uTime.value, camera);
   groundLights();
   terrain.material.uniforms.uTime.value += dt;
   const t = terrain.material.uniforms.uTime.value;
@@ -384,4 +417,4 @@ function frame() {
 requestAnimationFrame(frame);
 
 // For poking at in the browser console.
-window.worldZero = { scene, camera, controls, terrain, resources, sky, walkers, quality, ui, fires, snow, pulse, seasonTurned, creator };
+window.worldZero = { scene, camera, controls, terrain, resources, built, sky, walkers, quality, ui, fires, snow, pulse, seasonTurned, creator };

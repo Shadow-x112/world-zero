@@ -11,6 +11,7 @@ const TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".glb": "model/gltf-binary",
+  ".json": "application/json; charset=utf-8",
 };
 
 export interface ViewerFile {

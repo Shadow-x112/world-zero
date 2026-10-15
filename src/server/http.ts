@@ -255,7 +255,7 @@ export class WorldServer {
           const missing: Array<[number, number]> = [];
           for (const [cx, cy] of wanted) {
             const chunk = w.grid.viewChunk(cx, cy); // never loads anything into the world
-            if (chunk) chunks.push(encodeChunk(chunk));
+            if (chunk) chunks.push(encodeChunk(chunk, w));
             else missing.push([cx, cy]);
           }
           return send(200, { boot: this.hub.boot, chunks, missing });

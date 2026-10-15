@@ -539,12 +539,13 @@ export class Terrain {
           else quad([x1, top, z0], [x0, top, z0], [x0, bottom, z0], [x1, bottom, z0], s, bt, bt, bt, bt);
         }
 
-        // What has been built here.
+        // What has been built here (as blocks, from a world not yet made of pieces;
+        // pieces are drawn by pieces.js).
         const ground = level * LEVEL_H;
-        if (d.wall && d.wall[i]) {
+        if (!d.pieces && d.wall && d.wall[i]) {
           this.block(quad, x, y, ground + 0.001, ground + WALL_H, d.wall[i], d.wallHp[i] / 255, "wall");
         }
-        if (d.roof && d.roof[i]) {
+        if (!d.pieces && d.roof && d.roof[i]) {
           this.block(quad, x, y, ground + ROOF_Y0, ground + ROOF_Y1, d.roof[i], d.roofHp[i] / 255, "roof");
         }
       }

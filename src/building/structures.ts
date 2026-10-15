@@ -249,6 +249,7 @@ function afterChange(world: World, ev: PieceEvents): void {
   for (const k of [...ev.tiles].sort((a, b) => a - b)) {
     const [x, y] = tileOfKey(k);
     deriveTile(world, x, y);
+    world.grid.touchTile(x, y); // (the eye sees it changed)
   }
 }
 

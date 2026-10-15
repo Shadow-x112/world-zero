@@ -13,6 +13,8 @@ import { WorldServer, parseChunkList } from "../src/server/http.ts";
 import { StreamHub } from "../src/server/stream.ts";
 import { igniteAt } from "../src/world/fire.ts";
 import { Desk } from "../src/creator/desk.ts";
+import { addToBlock } from "../src/building/structures.ts";
+import { PIECE_FIELDS } from "../src/server/terrain.ts";
 
 const KEY = "a-test-creator-key-0123456789";
 
@@ -523,5 +525,29 @@ test("the creator's desk over the wire: preview, act, undo; never without the ke
   } finally {
     await server.close();
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the ground carries what is built on it, piece by piece", async () => {
+  const world = World.create({ seed: 311 });
+  for (const a of world.population.all()) Object.assign(a, { x: -300, y: -300 });
+  const stone = world.materials.require(4);
+  for (const [l, v] of [["terrain", 0], ["height", 0], ["material", 0], ["amount", 0]] as const) world.grid.set(l, 5, 5, v);
+  const before = world.grid.viewChunk(0, 0)!.revision;
+  for (let i = 0; i < 6; i++) addToBlock(world, "wall", 5, 5, stone, 1, 7);
+  assert.ok(world.grid.viewChunk(0, 0)!.revision > before, "building marks the ground as changed to the eye");
+  const { server, runner, port } = await serve(world);
+  server.attach(runner);
+  try {
+    const reply = JSON.parse((await call(port, "GET", "/api/chunkdata?c=0,0")).body);
+    const list: number[] = reply.chunks[0].pieces;
+    assert.equal(list.length % PIECE_FIELDS, 0);
+    assert.equal(list.length / PIECE_FIELDS, world.pieces.inChunk(0, 0).length);
+    const first = list.slice(0, PIECE_FIELDS);
+    assert.equal(first[2], 4, "its material");
+    assert.equal(first[13], 7, "and who set it there");
+    assert.ok(Math.abs(first[4] / 1000 - 5) < 0.6 && Math.abs(first[5] / 1000 - 5) < 0.6, "where it stands");
+  } finally {
+    await server.close();
   }
 });
