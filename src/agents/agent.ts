@@ -4,6 +4,7 @@
 // Behavior lives in needs.ts (bodily state), brain.ts (choosing what to do)
 // and actions.ts (doing it).
 
+import type { BuildSense } from "./building-sense.ts";
 import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { Item } from "../items/item.ts";
 import type { Emotions } from "./emotions.ts";
@@ -195,6 +196,8 @@ export interface AgentData {
   placedSinceWake: BuildLeaning;
   /** Shelter felt at the nest on the last waking there (-1 = never). */
   feltShelter: number;
+  /** What it has learned about building: which stuff is good for what (see building-sense.ts). */
+  buildSense: BuildSense;
   shelterSpots: ShelterSpot[];
   stats: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number; children: number; taken: number };
 }
@@ -275,6 +278,7 @@ export class Agent implements AgentData {
   buildLeaning!: BuildLeaning;
   placedSinceWake!: BuildLeaning;
   feltShelter!: number;
+  buildSense!: BuildSense;
   shelterSpots!: ShelterSpot[];
   stats!: { tilesWalked: number; daysAsleep: number; meals: number; blocksPlaced: number; crafted: number; cooked: number; children: number; taken: number };
 

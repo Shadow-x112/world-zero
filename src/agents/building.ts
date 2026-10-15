@@ -9,6 +9,10 @@
 // its place felt with the night before and leans toward whichever kind of
 // placement helped. Walls closing a circle, roofs, huts and shared shelters
 // are left to emerge from that.
+//
+// What to fetch, and where to put it, also follows what it has learned about
+// each material at each use (building-sense.ts): from its nights, from what
+// fell or rotted, and from neighbours' snugger places.
 
 import { FORM, formOf } from "../building/pieces.ts";
 import { TICKS_PER_DAY } from "../core/constants.ts";
@@ -36,10 +40,12 @@ import {
   pickupTicks,
   survey,
   takeFromTile,
+  type Spot,
   toolDidWork,
 } from "./foraging.ts";
 import type { ActionDef, AgentContext } from "./movement.ts";
-import { practice, workSpeed } from "./skill.ts";
+import { practice, watchSuccess, workSpeed } from "./skill.ts";
+import { learnFromNight, notePlaced, valueOf, type Use } from "./building-sense.ts";
 
 /** Remembered cold (health lost) at which the urge to build is at its strongest. */
 export const COLD_URGE_FULL = 0.3;
@@ -161,6 +167,7 @@ export function nestOf(agent: Agent, ctx: AgentContext): Nest | null {
       agent.home = { x: spot[0], y: spot[1] }; // where it sleeps and builds is home
       agent.feltShelter = shelterAt(world, spot[0], spot[1]);
       agent.placedSinceWake = { wall: 0, roof: 0 };
+      agent.buildSense.placed = {};
     }
   }
   agent.nest = nest;
@@ -221,17 +228,69 @@ export function placements(agent: Agent, ctx: AgentContext, nest: Nest, type: Ma
   return out;
 }
 
-/** Picks where to put a load: finishing what's started first, otherwise as its leaning says. */
-export function choosePlacement(agent: Agent, world: World, options: Placement[]): Placement {
+/** What a load of a material becomes in a placement: a wall, poles overhead, or a cover on them. */
+export function useFor(level: Level, type: MaterialType): Use {
+  if (level === "wall") return "wall";
+  return formOf(type) === FORM.pole ? "frame" : "cover";
+}
+
+/**
+ * Picks where to put a load: finishing what's started first, otherwise as its
+ * leaning says - and what it has learned about this stuff in each place.
+ */
+export function choosePlacement(agent: Agent, world: World, options: Placement[], type?: MaterialType): Placement {
   const rng = world.rng;
   const started = options.filter((o) => o.existing);
   if (started.length > 0) return started[rng.int(0, started.length - 1)];
   const walls = options.filter((o) => o.level === "wall");
   const roofs = options.filter((o) => o.level === "roof");
-  const w = walls.length > 0 ? agent.buildLeaning.wall : 0;
-  const r = roofs.length > 0 ? agent.buildLeaning.roof : 0;
+  const taught = (level: Level) => (type ? Math.exp(LESSON_PULL * valueOf(agent, useFor(level, type), type.id)) : 1);
+  const w = walls.length > 0 ? agent.buildLeaning.wall * taught("wall") : 0;
+  const r = roofs.length > 0 ? agent.buildLeaning.roof * taught("roof") : 0;
   const pool = rng.next() * (w + r) < w ? walls : roofs;
   return pool[rng.int(0, pool.length - 1)];
+}
+
+/** How much what it has learned sways where a load goes. */
+export const LESSON_PULL = 2;
+/** Worth lost per tile of walking to fetch something. */
+export const FETCH_COST = 0.004;
+/** Below this, it has learned a material is no good for anything it could do with it now. */
+export const NOT_WORTH = -0.4;
+/** How many of the nearest kinds of material it weighs up. */
+const WEIGH_UP = 4;
+
+/** The best it thinks it could make of a material at its nest right now (or null if nowhere for it). */
+export function worthOf(agent: Agent, ctx: AgentContext, nest: Nest, type: MaterialType): number | null {
+  let best: number | null = null;
+  for (const o of placements(agent, ctx, nest, type)) {
+    const v = valueOf(agent, useFor(o.level, type), type.id) + (o.existing ? 0.05 : 0);
+    if (best === null || v > best) best = v;
+  }
+  return best;
+}
+
+/**
+ * What to go and fetch: of the kinds of material in sight, the one it thinks
+ * will do most good, less the walk - nothing it has learned is no good.
+ */
+export function chooseSource(agent: Agent, ctx: AgentContext, nest: Nest): Spot | null {
+  const world = ctx.world;
+  let best: Spot | null = null;
+  let bestScore = -Infinity;
+  for (const spot of survey(agent, ctx).buildables.slice(0, WEIGH_UP)) {
+    const type = world.materials.get(spot.material);
+    if (!type || roomFor(agent, world, type) === 0) continue;
+    // (The most it could be worth, before the work of finding where it would go.)
+    const roofUse: Use = formOf(type) === FORM.pole ? "frame" : "cover";
+    const ceiling = Math.max(valueOf(agent, "wall", type.id), valueOf(agent, roofUse, type.id)) + 0.1 - FETCH_COST * spot.dist;
+    if (ceiling <= bestScore || ceiling < NOT_WORTH - 0.1) continue;
+    const worth = worthOf(agent, ctx, nest, type);
+    if (worth === null || worth < NOT_WORTH) continue;
+    const score = worth - FETCH_COST * spot.dist + 0.05 * world.rng.next();
+    if (score > bestScore) [best, bestScore] = [spot, score];
+  }
+  return best;
 }
 
 function recordFirsts(agent: Agent, world: World, p: Placement, type: MaterialType, nest: Nest): void {
@@ -270,6 +329,8 @@ export function wakeAtNest(agent: Agent, world: World): void {
   const felt = shelterAt(world, nest.x, nest.y);
   const placed = agent.placedSinceWake;
   const total = placed.wall + placed.roof;
+  if (agent.feltShelter >= 0) learnFromNight(agent, felt - agent.feltShelter);
+  else agent.buildSense.placed = {};
   if (total > 0 && agent.feltShelter >= 0) {
     const perPlacement = (felt - agent.feltShelter) / total;
     for (const level of ["wall", "roof"] as Level[]) {
@@ -291,7 +352,7 @@ export const BUILD: ActionDef = {
     if (!nest || Math.hypot(nest.x - agent.x, nest.y - agent.y) > NEST_REACH) return false;
     const a = agent.action!;
     const carried = carriedBuilding(agent, world);
-    const source = survey(agent, ctx).buildable;
+    const source = chooseSource(agent, ctx, nest);
     if (carried && (carried.mass >= 0.3 || !source)) {
       if (placements(agent, ctx, nest, carried.type).length === 0) return false;
       a.phase = "place";
@@ -301,8 +362,6 @@ export const BUILD: ActionDef = {
     }
     if (!source) return false;
     const type = world.materials.require(source.material);
-    if (roomFor(agent, world, type) === 0) return false;
-    if (placements(agent, ctx, nest, type).length === 0) return false;
     a.phase = "fetch";
     a.material = source.material;
     a.untilTick = world.tick + pickupTicks(agent, world, type);
@@ -359,13 +418,16 @@ export const BUILD: ActionDef = {
       dropOnGround(agent, world, type.id, have);
       return true;
     }
-    const spot = choosePlacement(agent, world, options);
+    const spot = choosePlacement(agent, world, options, type);
     const use = Math.min(have, unitsToComplete(world.grid, spot.level, spot.x, spot.y, type));
-    if (use > 0 && addToBlock(world, spot.level, spot.x, spot.y, type, use, agent.id, nest) > 0) {
+    const skill = agent.skills.building;
+    if (use > 0 && addToBlock(world, spot.level, spot.x, spot.y, type, use, agent.id, nest, skill) > 0) {
       dropUnits(agent, type.id, use);
       agent.placedSinceWake[spot.level]++;
+      notePlaced(agent, useFor(spot.level, type), type.id);
       agent.stats.blocksPlaced++;
       practice(agent, "building", true, world);
+      watchSuccess(ctx, agent, "building");
       recordFirsts(agent, world, spot, type, nest);
     }
     return unitsCarried(agent, type.id) === 0;

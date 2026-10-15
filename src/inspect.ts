@@ -99,6 +99,14 @@ export function agentDetail(agent: Agent, world: World): string {
       `  building  urge ${pct(buildUrge(agent, world)).trim()} (cold remembered ${agent.coldMemory.toFixed(2)}), ` +
         `${agent.stats.blocksPlaced} loads placed, leans walls ${agent.buildLeaning.wall.toFixed(2)} / roofs ${agent.buildLeaning.roof.toFixed(2)}`,
     );
+    const lessons = Object.entries(agent.buildSense.lessons)
+      .sort((x, y) => Math.abs(y[1].v) - Math.abs(x[1].v) || (x[0] < y[0] ? -1 : 1))
+      .slice(0, 6)
+      .map(([k, l]) => {
+        const [use, id] = k.split(":");
+        return `${use} of ${describe(agent.knowledge[Number(id)]?.props ?? {})} ${l.v >= 0 ? "+" : ""}${l.v.toFixed(2)}`;
+      });
+    if (lessons.length > 0) lines.push(`  learned   ${lessons.join("; ")}`);
   }
   const family: string[] = [];
   if (agent.parents) family.push(`child of ${agent.parents.map((p) => `#${String(p).padStart(2, "0")}`).join(" and ")}`);

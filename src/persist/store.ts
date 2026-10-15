@@ -31,7 +31,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 15;
+export const SAVE_FORMAT_VERSION = 16;
 
 interface SavedChunk {
   cx: number;
@@ -265,6 +265,15 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
   // 14 -> 15: pieces. Every wall and roof becomes the pieces it would be made of (see
   // building/pieces.ts), as sound as the block was; done once the world is loaded.
   14: (data) => ({ ...data, format: 15, pieces: null }),
+  // 15 -> 16: learning to build. No one has learned anything about building yet.
+  15: (data) => ({
+    ...data,
+    format: 16,
+    population: data.population && {
+      ...data.population,
+      agents: data.population.agents.map((a: any) => ({ ...a, buildSense: { lessons: {}, placed: {}, studied: -1 } })),
+    },
+  }),
 };
 
 function encodeLayer(array: LayerArray): string {

@@ -5,6 +5,7 @@
 // sharpness, flexibility and weight; tasting reveals whether it nourishes and
 // whether it harms. Hunger and curiosity push them to try things.
 
+import { studyShelter } from "./building-sense.ts";
 import type { World } from "../core/world.ts";
 import {
   TACTILE,
@@ -311,6 +312,8 @@ export interface Survey {
   unhandled: Spot | null;
   /** Nearest visible material it doesn't eat (something to build with). */
   buildable: Spot | null;
+  /** The nearest spot of each visible material it doesn't eat, nearest first. */
+  buildables: Spot[];
   /** Nearest visible material it knows to loosen poison-sickness. */
   cure: Spot | null;
   /** Nearest visible material it knows stings (a sick body will chance anything). */
@@ -336,7 +339,8 @@ function look(agent: Agent, ctx: AgentContext): Survey {
   const r2 = radius * radius;
   const ax = agent.tileX;
   const ay = agent.tileY;
-  const out: Survey = { food: null, untasted: null, unhandled: null, buildable: null, cure: null, bitter: null };
+  const out: Survey = { food: null, untasted: null, unhandled: null, buildable: null, buildables: [], cure: null, bitter: null };
+  const buildables = new Map<number, Spot>();
   const seenFood: Spot[] = [];
 
   for (let oy = -radius; oy <= radius; oy++) {
@@ -361,7 +365,11 @@ function look(agent: Agent, ctx: AgentContext): Survey {
         out.untasted = { x, y, material: id, dist };
       }
       if (!k.handled && (!out.unhandled || dist < out.unhandled.dist)) out.unhandled = { x, y, material: id, dist };
-      if (!isKnownFood(agent, type) && (!out.buildable || dist < out.buildable.dist)) out.buildable = { x, y, material: id, dist };
+      if (!isKnownFood(agent, type)) {
+        if (!out.buildable || dist < out.buildable.dist) out.buildable = { x, y, material: id, dist };
+        const b = buildables.get(id);
+        if (!b || dist < b.dist) buildables.set(id, { x, y, material: id, dist });
+      }
       if (k.curative && (!out.cure || dist < out.cure.dist)) out.cure = { x, y, material: id, dist };
       // A sick body will chance bitter things - but never more of what poisoned
       // it, and not what it has already learned to hate (taste aversion).
@@ -376,6 +384,8 @@ function look(agent: Agent, ctx: AgentContext): Survey {
       }
     }
   }
+
+  out.buildables = [...buildables.values()].sort((a, b) => a.dist - b.dist || a.material - b.material);
 
   // Refresh food memory: forget remembered spots in view that no longer have food; remember what's seen.
   agent.foodSpots = agent.foodSpots.filter((s) => {
@@ -392,6 +402,7 @@ function noticeShelter(agent: Agent, world: World, x: number, y: number): void {
   const spots = agent.shelterSpots;
   const i = spots.findIndex((s) => s.x === x && s.y === y);
   const value = world.grid.isWalkable(x, y) ? shelterAt(world, x, y) : 0;
+  studyShelter(agent, world, x, y, value);
   if (value < SHELTER_WORTH_REMEMBERING) {
     if (i >= 0) spots.splice(i, 1);
     return;

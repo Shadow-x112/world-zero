@@ -304,7 +304,7 @@ test("a step-3 save (format 3) upgrades: agents keep their cold as a memory", ()
     a.damage.exposure = 0.3;
   }
   const upgraded = deserializeWorld(data).world;
-  assert.equal(SAVE_FORMAT_VERSION, 15);
+  assert.equal(SAVE_FORMAT_VERSION, 16);
   for (const a of upgraded.population.all()) {
     assert.equal(a.coldMemory, 0.3);
     assert.equal(a.nest, null);

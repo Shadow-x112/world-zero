@@ -13,6 +13,7 @@ import type { System, World } from "../core/world.ts";
 import type { MaterialType } from "../materials/registry.ts";
 import { CHUNK_SIZE, Terrain, type Chunk } from "../world/chunk.ts";
 import type { Grid } from "../world/grid.ts";
+import { learnFromPieces } from "../agents/building-sense.ts";
 import { FORM, LEVEL_Z, ROLE, WALL_HEIGHT, aftermath, formOf, build, contains, rayHit, removePiece, settle, tileKey, tileOfKey, touch, unitsPerPiece, wear, type Piece, type PieceEvents, type Role } from "./pieces.ts";
 
 export type Level = "wall" | "roof";
@@ -76,9 +77,12 @@ const roleOf = (level: Level): Role => (level === "wall" ? ROLE.wall : ROLE.roof
  * Returns the units used (0 if nothing could be set there: another material's wall, a
  * roof with nothing to rest on, or a whole wall with nothing worn enough to replace).
  * Units set in are used up even if what they made gives way at once.
+ * Skill (0-1) is the builder's: unpractised hands set pieces less true, and
+ * don't always feel a pole bend or a wall sag before loading it.
  */
 export function addToBlock(
   world: World, level: Level, x: number, y: number, type: MaterialType, units: number, agentId: number, toward?: { x: number; y: number },
+  skill = 1,
 ): number {
   const grid = world.grid;
   const l = LAYER[level];
@@ -87,7 +91,7 @@ export function addToBlock(
   if (existing !== 0 && existing !== type.id && !(level === "roof" && formOf(type) !== FORM.pole && roofSupported(world, x, y, type))) return 0;
   const hp = existing === 0 ? 0 : grid.peek(l.hp, x, y);
   if (hp >= FULL_HP) return 0;
-  const made = build(world, roleOf(level), x, y, type, units, agentId, Math.max(1, roofSpan(type)), toward);
+  const made = build(world, roleOf(level), x, y, type, units, agentId, Math.max(1, roofSpan(type)), toward, skill);
   if (made.length === 0) return 0;
   const ev = settle(world);
   ev.tiles.add(tileKey(x, y));
@@ -239,7 +243,9 @@ export function deriveTile(world: World, x: number, y: number): void {
 
 /** After pieces changed: the injured, the chronicle, and every touched tile's layers. */
 function afterChange(world: World, ev: PieceEvents): void {
+  forgetShelter(world);
   aftermath(world, ev);
+  learnFromPieces(world, ev);
   for (const k of [...ev.tiles].sort((a, b) => a - b)) {
     const [x, y] = tileOfKey(k);
     deriveTile(world, x, y);
@@ -254,11 +260,12 @@ export function unitsToComplete(grid: Grid, level: Level, x: number, y: number, 
 
 /** Everything of a wall or roof at a tile is gone (burned); what rested on it falls. */
 export function removeBlock(world: World, level: Level, x: number, y: number): void {
-  const ev: PieceEvents = { fell: [], broke: [], tiles: new Set([tileKey(x, y)]) };
+  const ev: PieceEvents = { fell: [], broke: [], tiles: new Set([tileKey(x, y)]), rotted: [] };
   for (const p of world.pieces.at(x, y, roleOf(level))) removePiece(world, p, ev);
   settle(world, ev);
   afterChange(world, ev);
   if (world.grid.peek(LAYER[level].mat, x, y) !== 0) clearLayers(world.grid, level, x, y);
+  forgetShelter(world);
 }
 
 function clearLayers(grid: Grid, level: Level, x: number, y: number): void {
@@ -327,6 +334,25 @@ function blockingAt(world: World, x: number, y: number, fromHeight: number): num
  * Cover overhead counts for half; the surrounding tiles for the other half.
  */
 export function shelterAt(world: World, x: number, y: number): number {
+  // Asked for again and again (everyone glances at every roof in sight), so kept for the tick.
+  let memo = shelterMemo.get(world);
+  if (!memo || memo.tick !== world.tick) shelterMemo.set(world, (memo = { tick: world.tick, values: new Map() }));
+  const key = tileKey(x, y);
+  const known = memo.values.get(key);
+  if (known !== undefined) return known;
+  const value = measureShelter(world, x, y);
+  memo.values.set(key, value);
+  return value;
+}
+
+const shelterMemo = new WeakMap<World, { tick: number; values: Map<number, number> }>();
+
+/** Forgets measured shelter (something was built or fell). */
+function forgetShelter(world: World): void {
+  shelterMemo.delete(world);
+}
+
+function measureShelter(world: World, x: number, y: number): number {
   const grid = world.grid;
   let cover = 0;
   const roof = grid.peek("roof", x, y);

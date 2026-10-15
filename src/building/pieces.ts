@@ -218,8 +218,10 @@ const TAU = Math.PI * 2;
 // ---------- The store ----------
 
 export interface PieceEvents {
-  /** Pieces that fell (with how far), for injuries and the chronicle. */
-  fell: Array<{ piece: Piece; drop: number }>;
+  /** Pieces that fell (with how far, and what they were before), for injuries, lessons and the chronicle. */
+  fell: Array<{ piece: Piece; drop: number; role: Role }>;
+  /** Pieces that wore away to nothing (and what they were). */
+  rotted: Array<{ piece: Piece; role: Role }>;
   /** Pieces that broke under a load. */
   broke: Piece[];
   /** Tiles whose wall or roof changed. */
@@ -420,11 +422,13 @@ function alongRow(n: number, perRow: number, width: number): number {
  * Sets a new wall piece into a tile's wall, along the wall's line: lumps laid in
  * courses, poles stood side by side into a palisade, mats stood up as woven screens.
  */
-function placeInWall(world: World, p: Piece, toward?: { x: number; y: number }): boolean {
+function placeInWall(world: World, p: Piece, toward: { x: number; y: number } | undefined, skill: number): boolean {
   const store = world.pieces;
   const here = store.at(p.tx, p.ty, ROLE.wall);
   const z0 = groundZ(world, p.tx, p.ty);
-  const j = (salt: number) => jitter(world, salt, p.id);
+  // Unpractised hands set things less true: gaps, leans, crooked courses.
+  const slop = 1 + 3 * (1 - skill);
+  const j = (salt: number) => jitter(world, salt, p.id) * slop;
   const line = wallLine(world, p, toward);
   const lx = Math.cos(line), ly = Math.sin(line);
   const same = here.filter((q) => q.form === p.form);
@@ -485,13 +489,14 @@ function spare(world: World, q: Piece): number {
 }
 
 /** The tallest standing thing in a wall, if any (of the near-tallest, the one nearest a point). */
-function topOfWall(world: World, x: number, y: number, nearX = x, nearY = y): Piece | null {
+function topOfWall(world: World, x: number, y: number, nearX = x, nearY = y, bearing = 0): Piece | null {
   const here = world.pieces.at(x, y, ROLE.wall);
   let max = -Infinity;
   for (const q of here) max = Math.max(max, topOf(q));
   let best: Piece | null = null, bestD = Infinity;
   for (const q of here) {
     if (topOf(q) < max - 0.1) continue;
+    if (bearing > 0 && spare(world, q) < bearing) continue; // (only those that could take the weight)
     const d = Math.hypot(q.x - nearX, q.y - nearY);
     if (d < bestD - 1e-9 || (Math.abs(d - bestD) <= 1e-9 && best && q.id < best.id)) [best, bestD] = [q, d];
   }
@@ -503,10 +508,13 @@ function topOfWall(world: World, x: number, y: number, nearX = x, nearY = y): Pi
  * otherwise from the top of one wall down to the ground beyond (a lean-to). Mats are
  * laid over roof poles already there, if any.
  */
-function placeInRoof(world: World, p: Piece, reach: number): boolean | "full" {
+function placeInRoof(world: World, p: Piece, reach: number, skill: number): boolean | "full" {
   const store = world.pieces;
   const { tx, ty } = p;
-  const j = (salt: number) => jitter(world, salt, p.id);
+  const slop = 1 + 3 * (1 - skill);
+  const j = (salt: number) => jitter(world, salt, p.id) * slop;
+  // Skilled hands feel a pole bend or a wall sag before it is too late; the unpractised often don't.
+  const feels = hashFloat(world.meta.seed, 8420, p.id, 0, 0) < 0.7 + 0.3 * skill;
   const existing = store.at(tx, ty, ROLE.roof);
   // Over other roof pieces: a mat (or anything) laid on a pole already spanning the tile.
   const beams = existing.filter((q) => q.form === FORM.pole);
@@ -542,6 +550,7 @@ function placeInRoof(world: World, p: Piece, reach: number): boolean | "full" {
     // Not onto poles already bending, or onto walls already sagging under them.
     const share = p.mass / under.length;
     for (const q of under) {
+      if (!feels) break;
       if (spare(world, q) < share) return false;
       for (const id of q.on) {
         const w = id === GROUND ? undefined : store.get(id);
@@ -563,9 +572,9 @@ function placeInRoof(world: World, p: Piece, reach: number): boolean | "full" {
   for (let oy = -reach; oy <= reach; oy++) {
     for (let ox = -reach; ox <= reach; ox++) {
       if (ox === 0 && oy === 0) continue;
-      const top = topOfWall(world, tx + ox, ty + oy, tx, ty);
       // A builder can feel a wall that already sags under what it holds.
-      if (top && spare(world, top) >= p.mass / 2) walls.push({ x: tx + ox, y: ty + oy, top });
+      const top = topOfWall(world, tx + ox, ty + oy, tx, ty, feels ? p.mass / 2 : 0);
+      if (top) walls.push({ x: tx + ox, y: ty + oy, top });
     }
   }
   if (walls.length === 0) return false;
@@ -582,14 +591,14 @@ function placeInRoof(world: World, p: Piece, reach: number): boolean | "full" {
       if (span + 0.15 > p.len) continue;
       const za = topOf(a.top), zb = topOf(b.top);
       p.yaw = Math.atan2(b.top.y - a.top.y, b.top.x - a.top.x);
-      p.pitch = Math.atan2(zb - za, span);
+      p.pitch = Math.atan2(zb - za, span) + 0.03 * j(6);
       // Laid side by side, outward from the line through the tile's middle.
       const mx = (a.top.x + b.top.x) / 2, my = (a.top.y + b.top.y) / 2;
       const nx = -Math.sin(p.yaw), ny = Math.cos(p.yaw);
       const mid = (tx - mx) * nx + (ty - my) * ny;
       const k = (n % 2 === 0 ? 1 : -1) * Math.ceil(n / 2) * p.wid * 1.02;
       if (Math.abs(k) > 0.5) return "full"; // the tile is covered side to side
-      const off = mid + k;
+      const off = mid + k + j(5) * 0.04;
       p.x = mx + nx * off;
       p.y = my + ny * off;
       p.z = (za + zb) / 2 + p.thk / 2;
@@ -602,10 +611,11 @@ function placeInRoof(world: World, p: Piece, reach: number): boolean | "full" {
   const z0 = groundZ(world, tx, ty);
   const dir = Math.atan2(ty - w.y, tx - w.x);
   // Side by side along the wall, each leaning on whichever top piece is under it.
-  const side = (n % 2 === 0 ? 1 : -1) * Math.ceil(n / 2) * p.wid * 1.02;
-  if (Math.abs(side) > 0.5) return "full";
+  const even = (n % 2 === 0 ? 1 : -1) * Math.ceil(n / 2) * p.wid * 1.02;
+  if (Math.abs(even) > 0.5) return "full";
+  const side = even + j(7) * 0.04;
   const wantX = w.x - Math.sin(dir) * side, wantY = w.y + Math.cos(dir) * side;
-  const top = topOfWall(world, w.x, w.y, wantX, wantY) ?? w.top;
+  const top = topOfWall(world, w.x, w.y, wantX, wantY, feels ? p.mass / 2 : 0) ?? w.top;
   const along = (top.x - w.x) * -Math.sin(dir) + (top.y - w.y) * Math.cos(dir);
   const topX = top.x - Math.sin(dir) * (side - along), topY = top.y + Math.cos(dir) * (side - along);
   const rise = Math.max(0.05, topOf(top) - z0);
@@ -642,7 +652,10 @@ function replaceWorst(world: World, p: Piece): boolean {
  * Builds units of material into a tile's wall or roof, as many pieces as they make.
  * Returns the pieces made (none if a roof had nothing to rest on).
  */
-export function build(world: World, role: Role, x: number, y: number, type: MaterialType, units: number, by: number, roofReach = 1, toward?: { x: number; y: number }): Piece[] {
+export function build(
+  world: World, role: Role, x: number, y: number, type: MaterialType, units: number, by: number,
+  roofReach = 1, toward?: { x: number; y: number }, skill = 1,
+): Piece[] {
   const made: Piece[] = [];
   const per = unitsPerPiece(type);
   let left = units;
@@ -650,7 +663,7 @@ export function build(world: World, role: Role, x: number, y: number, type: Mate
     const u = Math.min(per, left);
     left -= u;
     const p = newPiece(world, type, u, by, role, x, y);
-    const placed = role === ROLE.roof ? placeInRoof(world, p, roofReach) : placeInWall(world, p, toward) || "full";
+    const placed = role === ROLE.roof ? placeInRoof(world, p, roofReach, skill) : placeInWall(world, p, toward, skill) || "full";
     if (placed === false) break; // a roof with nothing to rest on
     if (placed !== true) {
       // As big as it gets: the new piece goes in where the most worn one was.
@@ -674,7 +687,7 @@ export function capacity(world: World, p: Piece): number {
     case FORM.stone:
       return 12 * Math.pow(h, 1.2) * sound;
     case FORM.slab:
-      return lying ? 3 * h * sound : 1.2 * h * sound;
+      return Math.abs(p.pitch) < 0.3 ? 3 * h * sound : 1.2 * h * sound; // flat, or on edge
     case FORM.mat:
       return 0.6 * f * sound;
     default: {
@@ -717,7 +730,7 @@ function loads(store: PieceStore): Map<number, number> {
 // ---------- Falling, breaking, crumbling ----------
 
 export function emptyEvents(): PieceEvents {
-  return { fell: [], broke: [], tiles: new Set() };
+  return { fell: [], broke: [], tiles: new Set(), rotted: [] };
 }
 
 /** Notes every tile a piece reaches over (and its own) as changed. */
@@ -731,11 +744,12 @@ function fall(world: World, p: Piece, ev: PieceEvents): void {
   const store = world.pieces;
   const above = store.onTopOf(p.id);
   const from = bottomOf(p);
+  const role = p.role;
   touch(ev, p);
   const z0 = groundZ(world, p.x, p.y);
   store.update(p, { role: ROLE.rubble, pitch: 0, z: z0 + p.thk / 2, on: [GROUND], slot: -1 });
   const drop = Math.max(0, from - z0);
-  ev.fell.push({ piece: p, drop });
+  ev.fell.push({ piece: p, drop, role });
   // A hard landing: brittle things crack, springy things bend.
   const type = world.materials.get(p.material);
   const flex = type?.props.flexibility ?? 0;
@@ -787,7 +801,10 @@ export function wear(world: World): PieceEvents {
     if (hashFloat(seed, 8310, p.id, 0, world.tick) < loss - whole) whole++;
     p.hp -= whole;
     if (p.role !== ROLE.rubble) touch(ev, p);
-    if (p.hp <= 0) gone.push(p);
+    if (p.hp <= 0) {
+      gone.push(p);
+      if (p.role !== ROLE.rubble) ev.rotted.push({ piece: p, role: p.role });
+    }
   }
   for (const p of gone) removePiece(world, p, ev);
   settle(world, ev);

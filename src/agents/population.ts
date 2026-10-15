@@ -1,5 +1,6 @@
 // Everyone in the world, living and dead.
 
+import { blankBuildSense } from "./building-sense.ts";
 import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { Rng } from "../core/rng.ts";
 import { blankEmotions } from "./emotions.ts";
@@ -148,6 +149,7 @@ export class Population {
       buildLeaning: { wall: 1, roof: 1 },
       placedSinceWake: { wall: 0, roof: 0 },
       feltShelter: -1,
+      buildSense: blankBuildSense(),
       shelterSpots: [],
       stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0, crafted: 0, cooked: 0, children: 0, taken: 0 },
     };
@@ -209,6 +211,7 @@ export class Population {
       buildLeaning: { wall: 1, roof: 1 },
       placedSinceWake: { wall: 0, roof: 0 },
       feltShelter: -1,
+      buildSense: blankBuildSense(),
       shelterSpots: [],
       stats: { tilesWalked: 0, daysAsleep: 0, meals: 0, blocksPlaced: 0, crafted: 0, cooked: 0, children: 0, taken: 0 },
     });
