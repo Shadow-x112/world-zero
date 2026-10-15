@@ -260,10 +260,19 @@ export class Ui {
       else return;
     }
     if (this.selected !== id) return; // chose someone else meanwhile
-    this.renderInspector(a, first);
+    // The creator also sees the numbers behind the words: fetched before drawing, so the
+    // panel is redrawn once, whole (never emptied and refilled, which made it flicker).
+    let hidden = "";
+    if (a.alive && this.creator?.on) {
+      try {
+        hidden = (await this.creator.hiddenFor(a.id)) ?? "";
+      } catch {}
+      if (this.selected !== id) return;
+    }
+    this.renderInspector(a, first, hidden);
   }
 
-  renderInspector(a, first) {
+  renderInspector(a, first, hidden = "") {
     const name = `#${String(a.id).padStart(2, "0")}`;
     $("inspName").textContent = name;
     const body = $("inspBody");
@@ -285,7 +294,7 @@ export class Ui {
     const chips = (list, empty) => (list.length ? list.map((w) => `<span class="chip">${esc(w)}</span>`).join("") : `<span class="chip none">${empty}</span>`);
     const mate = a.mate !== null ? `<span class="link" data-ai="${a.mate}">#${String(a.mate).padStart(2, "0")}</span>` : `<span class="chip none">none</span>`;
     const open = body.querySelector("details")?.open ?? false;
-    body.innerHTML = `
+    const html = `
       <h3>Now</h3>
       <div class="doing" style="color:${accentCss(a.a)}"><span class="ring"></span><span style="color:var(--ink)">${esc(a.doing)}</span>${a.c ? ' <span style="color:var(--dim)">· carrying something</span>' : ""}</div>
       ${this.following ? "" : `<p style="margin:8px 0 0"><span class="link" data-follow="1">follow again</span></p>`}
@@ -302,32 +311,26 @@ export class Ui {
       <h3>Skills</h3><div class="chips">${chips(a.skills, "none yet")}</div>
       <h3>Mate</h3><div>${mate}</div>
       <details ${open ? "open" : ""}><summary>Full record</summary><pre class="record">${esc(a.detail)}</pre></details>
-    `;
+    ${hidden}`;
+    if (html === this.lastInspector && !first) return; // nothing changed: leave it be
+    this.lastInspector = html;
+    const keep = body.scrollTop;
+    body.innerHTML = html;
+    body.scrollTop = first ? 0 : keep;
     body.querySelectorAll("[data-ai]").forEach((el) => el.addEventListener("click", () => this.select(Number(el.dataset.ai))));
     body.querySelector("[data-follow]")?.addEventListener("click", () => this.select(a.id));
-    if (first) body.scrollTop = 0;
-    // The creator also sees the numbers behind the words.
-    if (this.creator?.on) {
-      const keep = body.scrollTop;
-      this.creator.hiddenFor(a.id).then((html) => {
-        if (!html || this.selected !== a.id) return;
-        body.insertAdjacentHTML("beforeend", html);
-        body.querySelectorAll(".hidden-block [data-ai]").forEach((el) => el.addEventListener("click", () => this.select(Number(el.dataset.ai))));
-        body.querySelectorAll(".hidden-block [data-act]").forEach((el) =>
-          el.addEventListener("click", async () => {
-            const params = { id: Number(el.dataset.id) };
-            if (el.dataset.act === "move") {
-              const at = await this.creator.pickGround(`Click the ground where #${String(params.id).padStart(2, "0")} should stand.`);
-              if (!at) return;
-              Object.assign(params, at);
-            }
-            await this.creator.act(el.dataset.act, params);
-            this.loadInspector(false);
-          }),
-        );
-        body.scrollTop = keep;
-      });
-    }
+    body.querySelectorAll(".hidden-block [data-act]").forEach((el) =>
+      el.addEventListener("click", async () => {
+        const params = { id: Number(el.dataset.id) };
+        if (el.dataset.act === "move") {
+          const at = await this.creator.pickGround(`Click the ground where #${String(params.id).padStart(2, "0")} should stand.`);
+          if (!at) return;
+          Object.assign(params, at);
+        }
+        await this.creator.act(el.dataset.act, params);
+        this.loadInspector(false);
+      }),
+    );
   }
 
   // ---------- Chronicle ----------
