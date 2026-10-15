@@ -115,6 +115,10 @@ const fragmentShader = /* glsl */ `
 `;
 
 /** A small world for the glass to reflect: black, with a band of light along the horizon. */
+let environment = null;
+export function sharedEnvironment(renderer) {
+  return (environment ??= makeEnvironment(renderer));
+}
 function makeEnvironment(renderer) {
   const env = new THREE.Scene();
   const sky = new THREE.Mesh(
@@ -260,7 +264,7 @@ export class Creatures {
     this.list = new Map(); // id -> Creature
     this.template = null;
     this.time = { value: 0 };
-    this.envMap = makeEnvironment(renderer);
+    this.envMap = sharedEnvironment(renderer);
     this.glass = true; // see-through glass (off on the lightest quality)
     this.v = new THREE.Vector3();
     this.c = new THREE.Color();

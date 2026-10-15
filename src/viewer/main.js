@@ -46,7 +46,7 @@ controls.target.set(0, 0, 0);
 
 const terrain = new Terrain(scene);
 const sky = new Sky(scene, terrain);
-const resources = new Resources(scene, terrain);
+const resources = new Resources(scene, terrain, renderer);
 const walkers = new Walkers(scene, terrain, renderer);
 walkers.camera = camera;
 const ui = new Ui({ camera, controls, walkers, terrain, api, canvas });

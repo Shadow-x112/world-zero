@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Resources test</title>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/", "three-custom-shader-material/vanilla": "https://cdn.jsdelivr.net/npm/three-custom-shader-material@6.4.0/vanilla/three-custom-shader-material.es.js" } }</script>
+<style>html,body{margin:0;height:100%;background:#000}canvas{width:100%;height:100%;display:block}</style></head>
+<body><canvas id="c"></canvas><script type="module">
+// The resource shapes in their real material, side by side (for checking how they look).
+import * as THREE from "three";
+import { Resources } from "/viewer/resources.js";
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById("c"), antialias: true });
+r.setSize(innerWidth, innerHeight, false);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#010307");
+const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 50);
+cam.position.set(0, 1.0, 4.6); cam.lookAt(0, 0.25, 0);
+const u = (v) => ({ value: v });
+const terrain = { material: { uniforms: { uTime: u(1), uGlow: u(1), uFog: u(new THREE.Color(0, 0, 0)), uFogDensity: u(0.001), uHorizon: u(new THREE.Color("#0b3550")), uResFocus: u(new THREE.Vector3()), uResRange: u(0) } } };
+const res = new Resources(scene, terrain, r);
+const colors = [new THREE.Color().setHSL(0.37, 0.9, 0.55), new THREE.Color().setHSL(0.56, 0.55, 0.78), new THREE.Color().setHSL(0.79, 0.95, 0.66)];
+const wait = setInterval(() => {
+  if (!res.meshes[0].length) return;
+  clearInterval(wait);
+  const all = res.meshes.flat();
+  const o = new THREE.Object3D();
+  all.forEach((m, i) => {
+    const kind = res.meshes.findIndex((l) => l.includes(m));
+    o.position.set((i - (all.length - 1) / 2) * 0.75, kind === 2 ? 0.35 : 0, 0);
+    o.scale.setScalar(kind === 0 ? 0.6 : 1.0);
+    o.updateMatrix();
+    m.setMatrixAt(0, o.matrix);
+    m.setColorAt(0, colors[kind].clone().multiplyScalar(kind === 2 ? 1.5 : 1.25));
+    m.geometry.attributes.aInst.setXYZW(0, i, kind, 1, 1);
+    m.count = 1;
+    m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; m.geometry.attributes.aInst.needsUpdate = true;
+  });
+  if (location.hash === '#basic') for (const m of all) m.material = new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide });
+  if (location.hash === '#normals') for (const m of all) m.material = new THREE.MeshNormalMaterial({ side: THREE.FrontSide });
+  r.render(scene, cam);
+  window.ready = true;
+}, 100);
+</script></body></html>

@@ -1,9 +1,13 @@
 // What lies on the land, in 3D: every material is shaped from how it looks (never from
 // what it truly is), so a viewer sees only what an AI could see.
 //
-//   growing things  tall faceted stalks of dark glass with glowing veins, swaying
-//   heavy things    low clusters of angular shards with bright cut edges
-//   glowing things  floating crystals that turn slowly and pulse
+//   growing things  plants of dark glass (tufts of blades, broad leaves, stalks with a
+//                   glowing seed-pod), lit along their midribs and margins, swaying
+//   heavy things    clusters of glossy rock with bright cut edges
+//   glowing things  six-sided crystals, lit from within, floating, turning and pulsing
+//
+// The shapes are made in Blender (tools/build_resources.py) in several variants, so a
+// field never looks stamped out.
 //
 // A material that is a little of each borrows from each (a heavy growing thing has
 // broad, stiff blades; a glowing stone floats low). Each tile shows one to four pieces
@@ -15,8 +19,54 @@ import * as THREE from "three";
 import { CHUNK } from "./api.js";
 import { LEVEL_H } from "./terrain.js";
 
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import CustomShaderMaterial from "three-custom-shader-material/vanilla";
+import { sharedEnvironment } from "./creatures.js";
+
 const PLANT = 0, STONE = 1, CRYSTAL = 2;
-const CAPACITY = [24000, 16000, 6000];
+/** The shapes made in Blender (tools/build_resources.py), by kind. */
+const VARIANTS = [["plant0", "plant1", "plant2"], ["stone0", "stone1", "stone2"], ["crystal0", "crystal1"]];
+const CAPACITY = [12000, 8000, 4000]; // per variant
+
+/**
+ * Lit edges for faceted shapes: each triangle gets barycentric coordinates, except that
+ * an edge between two faces lying flat together (a face split into triangles) is hidden,
+ * so only real cut edges glow.
+ */
+function withEdges(geo, flat = 0.999) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const pos = g.attributes.position;
+  const n = pos.count / 3;
+  const key = (i) => `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
+  const normals = [];
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let t = 0; t < n; t++) {
+    a.fromBufferAttribute(pos, t * 3);
+    b.fromBufferAttribute(pos, t * 3 + 1);
+    c.fromBufferAttribute(pos, t * 3 + 2);
+    normals.push(new THREE.Vector3().subVectors(b, a).cross(c.sub(a)).normalize());
+  }
+  const edges = new Map(); // "p|q" -> [triangle, corner opposite]
+  for (let t = 0; t < n; t++) {
+    for (let k = 0; k < 3; k++) {
+      const p = key(t * 3 + ((k + 1) % 3)), q = key(t * 3 + ((k + 2) % 3));
+      const e = p < q ? `${p}|${q}` : `${q}|${p}`;
+      if (!edges.has(e)) edges.set(e, []);
+      edges.get(e).push([t, k]);
+    }
+  }
+  const bary = new Float32Array(pos.count * 3);
+  for (let t = 0; t < n; t++) for (let k = 0; k < 3; k++) bary[(t * 3 + k) * 3 + k] = 1;
+  for (const list of edges.values()) {
+    if (list.length !== 2) continue;
+    const [[t1, k1], [t2, k2]] = list;
+    if (normals[t1].dot(normals[t2]) < flat) continue;
+    // Coplanar: hide this edge on both triangles.
+    for (const [t, k] of [[t1, k1], [t2, k2]]) for (let v = 0; v < 3; v++) bary[(t * 3 + v) * 3 + k] += 1;
+  }
+  g.setAttribute("aBary", new THREE.BufferAttribute(bary, 3));
+  return g;
+}
 
 /** Deterministic 0-1 noise for a tile and a slot, so pieces never jump around. */
 function rand(x, y, k) {
@@ -26,199 +76,122 @@ function rand(x, y, k) {
   return (h >>> 0) / 4294967296;
 }
 
-// ---------- Shapes (unit sized; non-indexed, with barycentrics for lit edges) ----------
+// ---------- Look: dark glass, lit along its edges and veins ----------
 
-/** Builds a geometry from triangles [[a, b, c], ...] of [x, y, z] points; h = height 0-1 at each vertex. */
-function triangles(tris, height) {
-  const pos = [], bary = [], hgt = [];
-  const B = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-  for (const t of tris) {
-    for (let i = 0; i < 3; i++) {
-      pos.push(...t[i]);
-      bary.push(...B[i]);
-      hgt.push(Math.max(0, Math.min(1, t[i][1] / height)));
+const vertexShader = /* glsl */ `
+  attribute vec4 aInst; // phase, kind, fullness, fade
+  #ifdef HAS_EDGES
+  attribute vec3 aBary;
+  #endif
+  varying vec3 vBary;
+  uniform float uTime;
+  uniform float uKind;
+  varying vec2 vUv2;
+  varying vec3 vTint;
+  varying vec4 vI;
+  varying vec3 vWorldN;
+  varying vec3 vWorldP;
+  varying float vDepth;
+  void main() {
+    vec2 uvf = vec2(uv.x, 1.0 - uv.y); // (across, height)
+    float h = uvf.y;
+    vec3 p = position;
+    if (uKind > 1.5) {
+      // Floating crystals turn slowly and bob.
+      float a = uTime * 0.45 + aInst.x;
+      float c = cos(a), s = sin(a);
+      p.xz = mat2(c, -s, s, c) * p.xz;
+      p.y += sin(uTime * 1.1 + aInst.x * 2.0) * 0.05;
+    } else if (uKind < 0.5) {
+      // Blades sway, more toward their tips, each plant in its own time.
+      float sway = sin(uTime * 0.9 + aInst.x) * 0.06 + sin(uTime * 2.3 + aInst.x * 3.0) * 0.015;
+      p.x += h * h * sway;
+      p.z += h * h * sway * 0.6;
     }
+    csm_Position = p;
+    vUv2 = uvf;
+    #ifdef HAS_EDGES
+    vBary = aBary;
+    #else
+    vBary = vec3(1.0);
+    #endif
+    vI = aInst;
+    #ifdef USE_INSTANCING_COLOR
+      vTint = instanceColor;
+    #else
+      vTint = vec3(1.0);
+    #endif
+    mat4 m = modelMatrix * instanceMatrix;
+    vec4 wp = m * vec4(p, 1.0);
+    vWorldP = wp.xyz;
+    vWorldN = normalize(mat3(m) * normal);
+    vDepth = -(viewMatrix * wp).z;
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute("aBary", new THREE.Float32BufferAttribute(bary, 3));
-  g.setAttribute("aH", new THREE.Float32BufferAttribute(hgt, 1));
-  g.computeBoundingSphere();
-  return g;
-}
+`;
 
-/** A tapered spike: n-sided base of radius r at (bx, 0, bz), tip at (tx, h, tz). */
-function spike(out, n, r, bx, bz, tx, h, tz, twist = 0) {
-  const ring = [];
-  for (let i = 0; i < n; i++) {
-    const a = twist + (i / n) * Math.PI * 2;
-    ring.push([bx + Math.cos(a) * r, 0, bz + Math.sin(a) * r]);
-  }
-  const tip = [tx, h, tz];
-  for (let i = 0; i < n; i++) out.push([ring[i], tip, ring[(i + 1) % n]]);
-}
-
-/** An irregular gem resting on the ground: a ring of points, a top and a squashed base. */
-function shard(out, r, h, cx, cz, seed) {
-  const n = 5;
-  const mid = [];
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + seed;
-    const rr = r * (0.75 + 0.5 * rand(i, 7, Math.floor(seed * 100)));
-    mid.push([cx + Math.cos(a) * rr, h * (0.3 + 0.2 * rand(i, 3, Math.floor(seed * 50))), cz + Math.sin(a) * rr]);
-  }
-  const top = [cx + r * 0.25 * Math.cos(seed * 3), h, cz + r * 0.25 * Math.sin(seed * 3)];
-  const base = [cx, 0, cz];
-  for (let i = 0; i < n; i++) {
-    const a = mid[i], b = mid[(i + 1) % n];
-    out.push([a, top, b]);
-    out.push([b, base, a]);
-  }
-}
-
-/** A double-pointed crystal, centred at the origin. */
-function bipyramid(out, n, r, h) {
-  const ring = [];
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    ring.push([Math.cos(a) * r, 0, Math.sin(a) * r]);
-  }
-  const top = [0, h * 0.6, 0];
-  const bottom = [0, -h * 0.4, 0];
-  for (let i = 0; i < n; i++) {
-    out.push([ring[i], top, ring[(i + 1) % n]]);
-    out.push([ring[(i + 1) % n], bottom, ring[i]]);
-  }
-}
-
-function plantShape() {
-  const t = [];
-  spike(t, 4, 0.045, 0, 0, 0.02, 1.0, 0.01, 0.3);
-  spike(t, 4, 0.04, 0.09, 0.03, 0.2, 0.72, 0.06, 1.1);
-  spike(t, 4, 0.04, -0.07, 0.07, -0.18, 0.62, 0.17, 0.5);
-  spike(t, 4, 0.035, -0.02, -0.09, -0.04, 0.5, -0.24, 0.9);
-  spike(t, 3, 0.03, 0.05, -0.06, 0.15, 0.38, -0.17, 0.2);
-  return triangles(t, 1.0);
-}
-
-function stoneShape() {
-  const t = [];
-  shard(t, 0.2, 0.42, 0, 0, 0.4);
-  shard(t, 0.12, 0.26, 0.2, 0.1, 1.7);
-  shard(t, 0.1, 0.2, -0.14, 0.16, 2.9);
-  return triangles(t, 0.42);
-}
-
-function crystalShape() {
-  const t = [];
-  bipyramid(t, 6, 0.11, 0.62);
-  const g = triangles(t, 0.62);
-  // Height runs from the lower tip (0) to the upper (1).
-  const p = g.attributes.position, h = g.attributes.aH;
-  for (let i = 0; i < p.count; i++) h.setX(i, (p.getY(i) + 0.62 * 0.4) / 0.62);
-  return g;
-}
-
-// ---------- Look ----------
-
-function material(uniforms) {
-  return new THREE.ShaderMaterial({
-    uniforms,
-    vertexShader: /* glsl */ `
-      attribute vec3 aBary;
-      attribute float aH;
-      attribute vec4 aInst; // phase, kind, fullness, fade
-      uniform float uTime;
-      varying vec3 vBary;
-      varying float vH;
-      varying vec3 vWorld;
-      varying vec3 vC;
-      varying vec4 vI;
-      varying float vDepth;
-      void main() {
-        vec3 p = position;
-        float kind = aInst.y;
-        if (kind > 1.5) {
-          // Floating crystals turn slowly and bob.
-          float a = uTime * 0.5 + aInst.x;
-          float c = cos(a), s = sin(a);
-          p.xz = mat2(c, -s, s, c) * p.xz;
-          p.y += sin(uTime * 1.1 + aInst.x * 2.0) * 0.05;
-        } else if (kind < 0.5) {
-          // Stalks sway a little, more at the tip.
-          float sway = sin(uTime * 0.9 + aInst.x) * 0.05 + sin(uTime * 2.3 + aInst.x * 3.0) * 0.012;
-          p.x += aH * aH * sway;
-          p.z += aH * aH * sway * 0.6;
-        }
-        vec4 wp = modelMatrix * instanceMatrix * vec4(p, 1.0);
-        vWorld = wp.xyz;
-        vBary = aBary;
-        vH = aH;
-        vC = instanceColor;
-        vI = aInst;
-        vec4 mv = viewMatrix * wp;
-        vDepth = -mv.z;
-        gl_Position = projectionMatrix * mv;
+const fragmentShader = /* glsl */ `
+  uniform float uTime;
+  uniform float uKind;
+  uniform float uGlow;
+  uniform float uCold;
+  uniform float uFogDensity;
+  varying vec2 vUv2;
+  varying vec3 vTint;
+  varying vec4 vI;
+  varying vec3 vWorldN;
+  varying vec3 vWorldP;
+  varying float vDepth;
+  varying vec3 vBary;
+  float lineAt(float d, float w) { return 1.0 - smoothstep(0.0, fwidth(d) * 1.2 + w, d); }
+  void main() {
+    float full = vI.z;
+    vec3 N = normalize(vWorldN);
+    vec3 V = normalize(cameraPosition - vWorldP);
+    float rim = pow(1.0 - abs(dot(N, V)), 3.0);
+    // Cut edges: near a triangle's side (sides between flat-joined faces are hidden).
+    float e = min(min(vBary.x, vBary.y), vBary.z);
+    float edge = 1.0 - smoothstep(0.0, fwidth(e) * 1.3 + 0.006, e);
+    float h = vUv2.y;
+    float light;
+    if (uKind < 0.5) {
+      if (vUv2.x > 1.5) {
+        // A seed-pod: it glows.
+        light = 1.6 + 0.4 * sin(uTime * 1.7 + vI.x);
+      } else {
+        // A midrib and margins of light, brighter toward the tip; dimmer in the cold.
+        float rib = lineAt(abs(vUv2.x - 0.5), 0.03);
+        float margin = lineAt(min(vUv2.x, 1.0 - vUv2.x), 0.02);
+        light = (0.9 * rib + 0.5 * margin) * (0.25 + 1.1 * h * h) + 0.25 * rim;
       }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform float uTime;
-      uniform float uGlow;
-      uniform vec3 uFog;
-      uniform float uFogDensity;
-      uniform vec3 uHorizon;
-      uniform float uCold;
-      varying vec3 vBary;
-      varying float vH;
-      varying vec3 vWorld;
-      varying vec3 vC;
-      varying vec4 vI;
-      varying float vDepth;
-      void main() {
-        float kind = vI.y;
-        float full = vI.z;
-        // Faceted: each face is flat, so its normal comes from the surface itself.
-        vec3 N = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
-        vec3 V = normalize(cameraPosition - vWorld);
-        float fr = pow(1.0 - abs(dot(N, V)), 2.5);
-        float e = min(min(vBary.x, vBary.y), vBary.z);
-        float edge = 1.0 - smoothstep(0.0, fwidth(e) * 1.4 + 0.004, e);
-        vec3 col = vec3(0.002, 0.003, 0.005) + uHorizon * fr * 0.12;
-        float bright;
-        if (kind < 0.5) {
-          // Stalks: veins brighten toward the tip; the cold dims what grows.
-          float vein = 0.2 + 0.9 * vH * vH;
-          bright = (0.015 + 0.12 * fr) * vein + edge * (0.12 + 0.6 * vH * vH);
-          bright *= 1.0 - 0.55 * uCold;
-        } else if (kind < 1.5) {
-          // Stone: dark faces, sharp bright cuts.
-          bright = 0.01 + 0.08 * fr + edge * 0.55;
-        } else {
-          // Glowing crystals: bright through and through, pulsing.
-          float pulse = 0.7 + 0.3 * sin(uTime * 2.0 + vI.x * 5.0);
-          bright = (0.06 + 0.25 * fr + edge * 0.8) * pulse;
-        }
-        col += vC * bright * (0.55 + 0.45 * full) * uGlow;
-        float fog = 1.0 - exp(-uFogDensity * uFogDensity * vDepth * vDepth);
-        gl_FragColor = vec4(mix(col, uFog, fog), 1.0);
-      }
-    `,
-  });
-}
+      light *= 1.0 - 0.55 * uCold;
+    } else if (uKind < 1.5) {
+      // Stone: dark glossy faces, bright cuts.
+      light = edge * 0.6 + rim * 0.14;
+    } else {
+      // Crystals: lit from within, edges blazing, pulsing.
+      float pulse = 0.7 + 0.3 * sin(uTime * 2.0 + vI.x * 5.0);
+      // (Lit evenly from root to tip, so a cluster never reads as a dark shape.)
+      light = (0.22 + 0.25 * h + edge * 1.1 + rim * 0.35) * pulse;
+    }
+    float fog = 1.0 - exp(-uFogDensity * uFogDensity * vDepth * vDepth);
+    csm_Emissive = vTint * light * (0.5 + 0.5 * full) * uGlow * (1.0 - fog);
+  }
+`;
 
-// ---------- Placement ----------
+// ---------- Placement ----------// ---------- Placement ----------
 
 /** Which shape a material takes, and its proportions, from how it looks. */
 function shapeOf(looks) {
   const growth = looks.growth ?? 0, mass = looks.mass ?? 0, energy = looks.energy ?? 0;
-  if (energy >= 0.5) return { kind: CRYSTAL, height: 0.42 + 0.3 * energy, width: 0.6 + 0.6 * mass, lift: 0.2 + 0.35 * (1 - mass) };
-  if (growth >= 0.15) return { kind: PLANT, height: 0.3 + 0.55 * growth, width: 0.8 + 1.4 * mass, lift: 0 };
-  return { kind: STONE, height: 0.5 + 0.8 * mass, width: 0.6 + 0.9 * mass, lift: 0 };
+  const base = { growth, mass, energy };
+  if (energy >= 0.5) return { ...base, kind: CRYSTAL, height: 0.42 + 0.3 * energy, width: 0.6 + 0.6 * mass, lift: 0.2 + 0.35 * (1 - mass) };
+  if (growth >= 0.15) return { ...base, kind: PLANT, height: 0.3 + 0.55 * growth, width: 0.8 + 1.4 * mass, lift: 0 };
+  return { ...base, kind: STONE, height: 0.5 + 0.8 * mass, width: 0.6 + 0.9 * mass, lift: 0 };
 }
 
 export class Resources {
-  /** uniforms: shared with the ground (time, glow, fog, horizon). */
-  constructor(scene, terrain) {
+  /** uniforms: shared with the ground (time, glow, fog). */
+  constructor(scene, terrain, renderer) {
     this.terrain = terrain;
     this.uniforms = {
       uTime: terrain.material.uniforms.uTime,
@@ -228,19 +201,35 @@ export class Resources {
       uHorizon: terrain.material.uniforms.uHorizon,
       uCold: { value: 0 },
     };
-    const mat = material(this.uniforms);
-    this.meshes = [plantShape(), stoneShape(), crystalShape()].map((geo, kind) => {
-      const m = new THREE.InstancedMesh(geo, mat, CAPACITY[kind]);
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      m.setColorAt(0, new THREE.Color());
-      const inst = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY[kind] * 4), 4);
-      inst.setUsage(THREE.DynamicDrawUsage);
-      geo.setAttribute("aInst", inst);
-      m.count = 0;
-      m.frustumCulled = false;
-      m.name = ["plants", "stones", "crystals"][kind];
-      scene.add(m);
-      return m;
+    this.meshes = [[], [], []]; // by kind, then variant
+    this.scene = scene;
+    this.envMap = sharedEnvironment(renderer);
+    new GLTFLoader().load("/viewer/resources.glb", (gltf) => {
+      const geos = {};
+      gltf.scene.traverse((o) => {
+        if (o.isMesh) geos[o.name] = o.geometry;
+      });
+      VARIANTS.forEach((names, kind) => {
+        const mat = this.material(kind);
+        for (const name of names) {
+          let geo = geos[name];
+          if (!geo) continue;
+          if (kind !== PLANT) geo = withEdges(geo, kind === STONE ? 0.93 : 0.999);
+          const m = new THREE.InstancedMesh(geo, mat, CAPACITY[kind]);
+          m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+          m.setColorAt(0, new THREE.Color());
+          const inst = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY[kind] * 4), 4);
+          inst.setUsage(THREE.DynamicDrawUsage);
+          geo.setAttribute("aInst", inst);
+          m.count = 0;
+          m.frustumCulled = false;
+          m.name = name;
+          m.visible = this.enabled;
+          scene.add(m);
+          this.meshes[kind].push(m);
+        }
+      });
+      this.range = 0; // draw now
     });
     this.focus = new THREE.Vector3(Infinity, 0, Infinity);
     this.range = 0;
@@ -253,13 +242,29 @@ export class Resources {
     this.enabled = true;
   }
 
+  material(kind) {
+    return new CustomShaderMaterial({
+      baseMaterial: THREE.MeshStandardMaterial,
+      vertexShader,
+      fragmentShader,
+      uniforms: { ...this.uniforms, uKind: { value: kind } },
+      defines: kind === PLANT ? {} : { HAS_EDGES: "" },
+      color: new THREE.Color(kind === CRYSTAL ? "#0d1420" : "#06090d"),
+      roughness: kind === STONE ? 0.22 : 0.12,
+      metalness: 0,
+      envMap: this.envMap,
+      envMapIntensity: kind === PLANT ? 0.6 : 0.85,
+      side: kind === PLANT ? THREE.DoubleSide : THREE.FrontSide,
+    });
+  }
+
   setSeason(season) {
     this.uniforms.uCold.value = season === "cold" ? 1 : season === "decline" ? 0.3 : 0;
   }
 
   setEnabled(on) {
     this.enabled = on;
-    for (const m of this.meshes) m.visible = on;
+    for (const m of this.meshes.flat()) m.visible = on;
     if (!on) this.terrain.material.uniforms.uResRange.value = 0;
     else this.range = 0; // redraw
   }
@@ -330,7 +335,8 @@ export class Resources {
     const { focus, range } = this;
     t.material.uniforms.uResFocus.value.copy(focus);
     t.material.uniforms.uResRange.value = range;
-    const counts = [0, 0, 0];
+    if (!this.meshes[0].length) return;
+    const counts = this.meshes.map((v) => v.map(() => 0));
     const o = this.o;
     this.seen.clear();
     const r = Math.ceil(range / CHUNK) + 1;
@@ -360,9 +366,10 @@ export class Resources {
             if (fade <= 0.02) continue;
             const pieces = s.kind === CRYSTAL ? 1 : 1 + (full > 0.55 ? 1 : 0) + (s.kind === PLANT && full > 0.9 ? 1 : 0);
             const gy = d.height[i] * LEVEL_H;
-            const mesh = this.meshes[s.kind];
             for (let k = 0; k < pieces; k++) {
-              const n = counts[s.kind];
+              const vi = this.variantOf(s, x, y, k);
+              const mesh = this.meshes[s.kind][vi];
+              const n = counts[s.kind][vi];
               if (n >= CAPACITY[s.kind]) break;
               const r1 = rand(x, y, k * 3 + 1), r2b = rand(x, y, k * 3 + 2), r3 = rand(x, y, k * 3 + 3);
               const spread = pieces === 1 ? 0.12 : 0.32;
@@ -379,19 +386,31 @@ export class Resources {
               this.c.copy(s.color).multiplyScalar(s.kind === CRYSTAL ? 1.5 : 1.25);
               mesh.setColorAt(n, this.c);
               mesh.geometry.attributes.aInst.setXYZW(n, r1 * 6.283 + k, s.kind, full, fade);
-              counts[s.kind] = n + 1;
+              counts[s.kind][vi] = n + 1;
             }
           }
         }
       }
     }
-    for (let k = 0; k < 3; k++) {
-      const m = this.meshes[k];
-      m.count = counts[k];
+    for (const [k, list] of this.meshes.entries()) for (const [vi, m] of list.entries()) {
+      m.count = counts[k][vi];
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
       m.geometry.attributes.aInst.needsUpdate = true;
     }
-    this.counts = counts;
+    this.counts = counts.map((c) => c.reduce((a, b) => a + b, 0));
+  }
+
+  /** Which shape a piece takes: leafy plants for heavier growing things, seed-pods for the
+   *  most alive; otherwise a fixed mix by place, so neighbours differ. */
+  variantOf(s, x, y, k) {
+    const r = rand(x, y, 40 + k);
+    const n = this.meshes[s.kind].length;
+    if (s.kind === PLANT && n === 3) {
+      const leafy = Math.min(0.75, 0.15 + s.mass * 1.2);
+      const pod = s.growth > 0.6 ? 0.3 : 0.12;
+      return r < leafy ? 1 : r < leafy + pod ? 2 : 0;
+    }
+    return Math.min(n - 1, Math.floor(r * n));
   }
 }
