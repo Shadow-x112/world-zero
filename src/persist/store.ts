@@ -8,6 +8,8 @@
 // Writes are atomic: data goes to a temporary file which is then renamed over
 // the old one, so a crash mid-save can never leave a half-written world.
 
+import { PieceStore } from "../building/pieces.ts";
+import { piecesFromBlocks } from "../building/structures.ts";
 import { historyFromChronicle, type DayRecord } from "../core/history.ts";
 import { mkdir, readFile, readdir, rename, copyFile, rm, open } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -29,7 +31,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 14;
+export const SAVE_FORMAT_VERSION = 15;
 
 interface SavedChunk {
   cx: number;
@@ -64,6 +66,8 @@ export interface SaveData {
   itemSeq: number;
   /** Daily vital statistics (format 14+). */
   history: DayRecord[];
+  /** Everything built, piece by piece (format 15+; null: build them from the old blocks). */
+  pieces: { seq: number; pieces: number[][] } | null;
 }
 
 /** Upgrades older saves step by step. Key = format version being upgraded from. */
@@ -258,6 +262,9 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
     }
     return { ...data, format: 14, history };
   },
+  // 14 -> 15: pieces. Every wall and roof becomes the pieces it would be made of (see
+  // building/pieces.ts), as sound as the block was; done once the world is loaded.
+  14: (data) => ({ ...data, format: 15, pieces: null }),
 };
 
 function encodeLayer(array: LayerArray): string {
@@ -304,6 +311,7 @@ export function serializeWorld(world: World, speed: number): SaveData {
     groundItems: world.groundItems.toJSON(),
     itemSeq: world.itemSeq,
     history: world.history,
+    pieces: world.pieces.toJSON(),
   };
 }
 
@@ -341,6 +349,8 @@ export function deserializeWorld(raw: any): { world: World; speed: number } {
     for (const [version, keys] of Object.entries(save.pristine)) {
       for (const key of keys) w.grid.rememberPristine(key, Number(version));
     }
+    if (save.pieces) w.pieces = PieceStore.fromJSON(save.pieces, w);
+    else piecesFromBlocks(w);
     if (!save.population) {
       const founders = w.population.spawnFounders(w.rng, w.tick);
       w.chronicle.add(

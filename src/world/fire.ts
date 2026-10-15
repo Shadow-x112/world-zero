@@ -183,7 +183,7 @@ export class FireSystem implements System {
       if (roof) {
         const type = world.materials.get(roof.material);
         if (type && burnable(type) && roll(8307, f.x, f.y) < SPREAD_ROOF_CHANCE * season) {
-          removeBlock(grid, "roof", f.x, f.y);
+          removeBlock(world, "roof", f.x, f.y);
           fuel = igniteAt(world, f.x, f.y, Math.round((roof.hp / FULL_HP) * BLOCK_MASS * type.props.energy * FUEL_HOURS_PER_MASS_ENERGY * 10));
           this.noteBurnedBuilding(world, f.x, f.y);
         }
@@ -197,7 +197,7 @@ export class FireSystem implements System {
 
   /** A standing block catches: it is gone, and a fire with its substance burns in its place. */
   private burnBlock(world: World, level: Level, x: number, y: number, hp: number, type: MaterialType): void {
-    removeBlock(world.grid, level, x, y);
+    removeBlock(world, level, x, y);
     igniteAt(world, x, y, Math.round((hp / FULL_HP) * BLOCK_MASS * type.props.energy * FUEL_HOURS_PER_MASS_ENERGY * 10));
     this.noteBurnedBuilding(world, x, y);
   }

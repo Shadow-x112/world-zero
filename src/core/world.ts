@@ -15,6 +15,7 @@ import { GridMaintenance } from "../world/maintenance.ts";
 import { MaterialRegistry } from "../materials/registry.ts";
 import { Regrowth } from "../materials/regrowth.ts";
 import { Structures } from "../building/structures.ts";
+import { PieceStore } from "../building/pieces.ts";
 import { GroundItems } from "../items/item.ts";
 import { Drying } from "../items/drying.ts";
 import { FireSystem } from "../world/fire.ts";
@@ -49,6 +50,8 @@ export class World {
   tick: number;
   /** Items lying in the world that no one carries. */
   groundItems = new GroundItems();
+  /** Everything anyone has built, piece by piece (see building/pieces.ts). */
+  pieces = new PieceStore();
   /** One record of vital statistics per world day (see core/history.ts). */
   history: DayRecord[] = [];
   /** Burning tiles right now (an index over the grid's fire layer). */

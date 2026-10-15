@@ -1,16 +1,19 @@
-// Structures: material placed on the ground (walls) or held up above head
-// height (roofs), and the shelter they give.
+// Structures: material built into walls beside a sleeping place or roofs over it, and
+// the shelter they give.
 //
-// A block is made of one kind of material. Its soundness ("hp", 0-1000)
-// grows as material is added and fades with time; how long it lasts, how well
-// it keeps the cold out and how far it can reach as a roof all follow from the
-// material's properties. No block type is named or special-cased.
+// What stands is made of pieces (see pieces.ts): poles, stones, slabs and mats, each
+// resting on the ground or on others, wearing with time and falling when what holds
+// them up is gone. Each tile's "wall" and "roof" layers are kept up to date from its
+// pieces - how much stands there, of what, how sound - and walking, shelter and the
+// viewer read those. How long things last, how well they keep the cold out and how far
+// a roof can reach all follow from the material's properties. Nothing is named or
+// special-cased.
 
 import type { System, World } from "../core/world.ts";
-import { hashFloat } from "../core/rng.ts";
 import type { MaterialType } from "../materials/registry.ts";
 import { CHUNK_SIZE, Terrain, type Chunk } from "../world/chunk.ts";
 import type { Grid } from "../world/grid.ts";
+import { ROLE, aftermath, build, removePiece, settle, tileKey, tileOfKey, wear, type PieceEvents, type Role } from "./pieces.ts";
 
 export type Level = "wall" | "roof";
 
@@ -34,10 +37,7 @@ export interface Block {
 }
 
 /** Days a complete block of this material stands before it has crumbled away. Harder lasts longer. */
-export function blockLifeDays(type: MaterialType): number {
-  const h = type.props.hardness;
-  return 4 + 400 * h * h;
-}
+export { lifeDays as blockLifeDays } from "./pieces.ts";
 
 /** How well a complete block of this material keeps the cold out (0.5-1). Dense, hard things are best. */
 export function blockQuality(type: MaterialType): number {
@@ -69,9 +69,12 @@ export function hasWall(grid: Grid, x: number, y: number): boolean {
   return grid.peek("wall", x, y) !== 0;
 }
 
+const roleOf = (level: Level): Role => (level === "wall" ? ROLE.wall : ROLE.roof);
+
 /**
- * Adds units of material to the block at a tile, creating it if there is none.
- * Returns the soundness gained (0 if the tile holds a block of another material).
+ * Builds units of material into the wall or roof at a tile, as pieces.
+ * Returns the soundness gained (0 if the tile holds a block of another material, or a
+ * roof has nothing to rest on).
  */
 export function addToBlock(world: World, level: Level, x: number, y: number, type: MaterialType, units: number, agentId: number): number {
   const grid = world.grid;
@@ -79,15 +82,50 @@ export function addToBlock(world: World, level: Level, x: number, y: number, typ
   const existing = grid.peek(l.mat, x, y);
   if (existing !== 0 && existing !== type.id) return 0;
   const hp = existing === 0 ? 0 : grid.peek(l.hp, x, y);
-  const added = Math.min(FULL_HP - hp, Math.round((units * type.props.mass * FULL_HP) / BLOCK_MASS));
-  if (added <= 0) return 0;
-  if (existing === 0) {
-    grid.set(l.mat, x, y, type.id);
-    grid.set(l.by, x, y, agentId);
-    grid.set(l.day, x, y, Math.min(65535, world.calendar.day + 1));
+  if (hp >= FULL_HP) return 0;
+  const made = build(world, roleOf(level), x, y, type, units, agentId, Math.max(1, roofSpan(type)));
+  if (made.length === 0) return 0;
+  const ev = settle(world);
+  ev.tiles.add(tileKey(x, y));
+  afterChange(world, ev);
+  return Math.max(0, grid.peek(l.hp, x, y) - hp);
+}
+
+/**
+ * Brings a tile's wall and roof layers up to date with its pieces: what stands there
+ * (the material most of it is made of), and how much of a full block it amounts to.
+ */
+export function deriveTile(world: World, x: number, y: number): void {
+  const grid = world.grid;
+  for (const level of ["wall", "roof"] as Level[]) {
+    const l = LAYER[level];
+    const pieces = world.pieces.at(x, y, roleOf(level));
+    let sound = 0;
+    const byMaterial = new Map<number, number>();
+    for (const p of pieces) {
+      sound += p.mass * (p.hp / FULL_HP);
+      byMaterial.set(p.material, (byMaterial.get(p.material) ?? 0) + p.mass);
+    }
+    const hp = Math.min(FULL_HP, Math.round((sound / BLOCK_MASS) * FULL_HP));
+    if (pieces.length === 0 || hp <= 0) {
+      if (grid.peek(l.mat, x, y) !== 0) clearLayers(grid, level, x, y);
+      continue;
+    }
+    let material = 0, most = -1;
+    for (const [m, mass] of [...byMaterial].sort((a, b) => a[0] - b[0])) if (mass > most) [material, most] = [m, mass];
+    const first = pieces[0];
+    const want: [string, number][] = [[l.mat, material], [l.hp, hp], [l.by, first.by], [l.day, Math.min(65535, first.day + 1)]];
+    for (const [name, value] of want) if (grid.peek(name, x, y) !== value) grid.set(name, x, y, value);
   }
-  grid.set(l.hp, x, y, hp + added);
-  return added;
+}
+
+/** After pieces changed: the injured, the chronicle, and every touched tile's layers. */
+function afterChange(world: World, ev: PieceEvents): void {
+  aftermath(world, ev);
+  for (const k of [...ev.tiles].sort((a, b) => a - b)) {
+    const [x, y] = tileOfKey(k);
+    deriveTile(world, x, y);
+  }
 }
 
 /** Units that would bring a block to full soundness (all of them for a new block). */
@@ -97,7 +135,16 @@ export function unitsToComplete(grid: Grid, level: Level, x: number, y: number, 
   return Math.max(0, Math.ceil((missing * BLOCK_MASS) / FULL_HP / Math.max(0.01, type.props.mass) - 1e-9));
 }
 
-export function removeBlock(grid: Grid, level: Level, x: number, y: number): void {
+/** Everything of a wall or roof at a tile is gone (burned); what rested on it falls. */
+export function removeBlock(world: World, level: Level, x: number, y: number): void {
+  const ev: PieceEvents = { fell: [], broke: [], tiles: new Set([tileKey(x, y)]) };
+  for (const p of world.pieces.at(x, y, roleOf(level))) removePiece(world, p, ev);
+  settle(world, ev);
+  afterChange(world, ev);
+  if (world.grid.peek(LAYER[level].mat, x, y) !== 0) clearLayers(world.grid, level, x, y);
+}
+
+function clearLayers(grid: Grid, level: Level, x: number, y: number): void {
   const l = LAYER[level];
   grid.set(l.mat, x, y, 0);
   grid.set(l.hp, x, y, 0);
@@ -228,6 +275,31 @@ function forEachBlock(chunk: Chunk, level: Level, fn: (i: number, x: number, y: 
   }
 }
 
+/**
+ * Builds pieces for every wall and roof in a world saved before pieces existed: each
+ * block becomes the pieces its material makes, as sound as the block was, by the same
+ * hands on the same day. Walls first, so roofs have something to rest on.
+ */
+export function piecesFromBlocks(world: World): void {
+  const blocks = allBlocks(world.grid).sort((a, b) => (a.level === b.level ? a.x - b.x || a.y - b.y : a.level === "wall" ? -1 : 1));
+  for (const { level, x, y } of blocks) {
+    const b = blockAt(world.grid, level, x, y)!;
+    const type = world.materials.get(b.material);
+    if (!type) continue;
+    const made = build(world, roleOf(level), x, y, type, unitsPerBlock(type), b.by, Math.max(1, roofSpan(type)));
+    for (const p of made) {
+      p.hp = b.hp;
+      p.day = Math.max(-1, b.day);
+    }
+  }
+  const ev = settle(world);
+  for (const { x, y } of blocks) ev.tiles.add(tileKey(x, y));
+  for (const k of [...ev.tiles].sort((a, b) => a - b)) {
+    const [x, y] = tileOfKey(k);
+    deriveTile(world, x, y);
+  }
+}
+
 /** Counts of everything standing (for status lines). */
 export function countBlocks(grid: Grid): { walls: number; roofs: number } {
   let walls = 0;
@@ -262,44 +334,9 @@ export class Structures implements System {
 
   update(_world: World): void {}
 
+  /** A day's wear: every piece weakens; what wears through crumbles, and what it held falls. */
   weather(world: World): void {
-    const grid = world.grid;
-    const seed = world.meta.seed;
-    let wallsLost = false;
-    const chunks = [...grid.changedChunks()];
-    for (const chunk of chunks) {
-      for (const level of ["wall", "roof"] as Level[]) {
-        const hpLayer = chunk.peekLayer(LAYER[level].hp);
-        if (!hpLayer) continue;
-        const gone: [number, number][] = [];
-        forEachBlock(chunk, level, (i, x, y) => {
-          const type = world.materials.get(chunk.layer(LAYER[level].mat)[i]);
-          const loss = type ? FULL_HP / blockLifeDays(type) : FULL_HP;
-          let whole = Math.floor(loss);
-          if (hashFloat(seed, level === "wall" ? 8302 : 8303, x, y, world.tick) < loss - whole) whole++;
-          const hp = hpLayer[i] - whole;
-          if (hp <= 0) gone.push([x, y]);
-          else grid.set(LAYER[level].hp, x, y, hp);
-        });
-        for (const [x, y] of gone) removeBlock(grid, level, x, y);
-        if (level === "wall" && gone.length > 0) wallsLost = true;
-      }
-    }
-    if (wallsLost) this.dropUnsupported(world);
-  }
-
-  /** Brings down every roof no longer held up by a wall. */
-  dropUnsupported(world: World): number {
-    const grid = world.grid;
-    const falling: [number, number][] = [];
-    for (const chunk of grid.changedChunks()) {
-      forEachBlock(chunk, "roof", (i, x, y) => {
-        const type = world.materials.get(chunk.layer("roof")[i]);
-        if (!type || !roofSupported(grid, x, y, type)) falling.push([x, y]);
-      });
-    }
-    for (const [x, y] of falling) removeBlock(grid, "roof", x, y);
-    return falling.length;
+    afterChange(world, wear(world));
   }
 
   dispose(): void {

@@ -16,6 +16,8 @@ export interface WorldEvents {
   dusk: { day: number };
   /** An agent died. */
   agentDied: { agentId: number; cause: string };
+  /** Built things came down: how many pieces fell, how many broke under a load, who was struck. */
+  collapse: { fell: number; broke: number; struck: number[]; x: number; y: number };
   /** No one is left alive. */
   extinction: { tick: number };
 }
