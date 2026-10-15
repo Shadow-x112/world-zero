@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { World } from "../src/core/world.ts";
 import { addToBlock, blockAt, removeBlock, unitsPerBlock, Structures } from "../src/building/structures.ts";
-import { FORM, GROUND, ROLE, build, formOf, settle, topOf } from "../src/building/pieces.ts";
+import { FORM, GROUND, ROLE, build, formOf, settle, topOf, unitsPerPiece } from "../src/building/pieces.ts";
 import { serializeWorld, deserializeWorld } from "../src/persist/store.ts";
 
 const FIBER = 2, GROVE = 3, STONE = 4, EARTH = 6;
@@ -73,31 +73,39 @@ test("a beam across two walls holds a roof; take a wall away and it falls on who
   assert.ok(world.firsts.has("collapse"));
 });
 
-test("too much weight on a beam breaks it", () => {
+test("builders won't load a beam past bearing; a beam that weakens under its load breaks", () => {
   const world = emptyWorld();
   const [x, y] = [-30, 10];
   clear(world, x, y, 3);
   const stone = world.materials.require(STONE);
   const grove = world.materials.require(GROVE);
   const earth = world.materials.require(EARTH);
-  build(world, ROLE.wall, x - 1, y, stone, 1, 1);
-  build(world, ROLE.wall, x + 1, y, stone, 1, 1);
-  build(world, ROLE.roof, x, y, grove, 1, 1, 2);
-  assert.equal(settle(world).broke.length, 0, "a bare beam holds itself");
-  // Lumps of earth heaped on it.
-  build(world, ROLE.roof, x, y, earth, 8, 1, 2);
+  for (let i = 0; i < 6; i++) {
+    build(world, ROLE.wall, x - 1, y, stone, 1, 1);
+    build(world, ROLE.wall, x + 1, y, stone, 1, 1);
+  }
+  build(world, ROLE.roof, x, y, grove, 3, 1, 2);
+  assert.equal(settle(world).broke.length, 0, "bare beams hold themselves");
+  // Lumps of earth heaped on, until the builder feels the beams give.
+  const heaped = build(world, ROLE.roof, x, y, earth, 40, 1, 2);
+  assert.ok(heaped.length >= 1, "some go on");
+  assert.ok(heaped.length < 40 / unitsPerPiece(earth), "but not past what the beams bear");
+  assert.equal(settle(world).broke.length, 0, "and what went on holds");
+  // Then the beams rot.
+  for (const p of world.pieces.at(x, y, ROLE.roof)) if (p.form === FORM.pole) p.hp = 20;
   const ev = settle(world);
   assert.ok(ev.broke.length >= 1, "something gave way");
   assert.ok(ev.fell.length >= 2, "and everything on it fell");
 });
 
-test("pieces wear; when the bottom of a pile rots, what it held falls", () => {
+test("pieces wear; when what holds a roof rots, the roof falls", () => {
   const world = emptyWorld();
   const [x, y] = [40, -40];
   clear(world, x, y, 3);
   const fiber = world.materials.require(FIBER);
-  addToBlock(world, "wall", x + 1, y, fiber, 8, 1);
-  addToBlock(world, "roof", x, y, fiber, 8, 1);
+  const grove = world.materials.require(GROVE);
+  addToBlock(world, "wall", x + 1, y, fiber, 4, 1);
+  addToBlock(world, "roof", x, y, grove, 2, 1);
   assert.ok(blockAt(world.grid, "roof", x, y));
   const s = new Structures();
   for (let d = 0; d < 12; d++) s.weather(world);

@@ -21,6 +21,7 @@ import { serializeWorld, deserializeWorld } from "../src/persist/store.ts";
 import type { Agent } from "../src/agents/agent.ts";
 import type { AgentContext } from "../src/agents/movement.ts";
 import { learnAround } from "../src/agents/senses.ts";
+import { buildUp } from "./support/build.ts";
 
 function ctxOf(world: World): AgentContext {
   const index = new SpatialIndex(8);
@@ -56,9 +57,9 @@ function makeNest(world: World, agent: Agent, x: number, y: number): void {
     world.grid.set("amount", x + ox, y + oy, 0);
   }
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-    addToBlock(world, "wall", x + dx, y + dy, brick, unitsPerBlock(brick), agent.id);
+    buildUp(world, "wall", x + dx, y + dy, brick, agent.id, { x, y });
   }
-  addToBlock(world, "roof", x, y, grove, 2, agent.id);
+  buildUp(world, "roof", x, y, grove, agent.id);
   agent.nest = { x, y, lastSlept: world.tick };
   assert.ok(shelterAt(world, x, y) >= 0.5, "the nest is snug enough");
 }

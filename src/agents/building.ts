@@ -10,6 +10,7 @@
 // placement helped. Walls closing a circle, roofs, huts and shared shelters
 // are left to emerge from that.
 
+import { FORM, formOf } from "../building/pieces.ts";
 import { TICKS_PER_DAY } from "../core/constants.ts";
 import type { World } from "../core/world.ts";
 import { BRICK_ID, describe, type MaterialType } from "../materials/registry.ts";
@@ -44,8 +45,8 @@ import { practice, workSpeed } from "./skill.ts";
 export const COLD_URGE_FULL = 0.3;
 /** World seconds to set one load of material in place. */
 export const PLACE_TICKS = 120;
-/** An existing block weaker than this gets topped up with matching material. */
-export const REPAIR_BELOW = 700;
+/** A wall or roof not yet this whole (or worn below it) gets more of the same material. */
+export const REPAIR_BELOW = 950;
 /** Farthest an AI will carry material home to its nest, in tiles. */
 export const NEST_REACH = 60;
 /** A nest not slept in for this many days, far from where it now sleeps, is given up. */
@@ -212,8 +213,9 @@ export function placements(agent: Agent, ctx: AgentContext, nest: Nest, type: Ma
   }
   const roof = blockAt(grid, "roof", nest.x, nest.y);
   if (roof) {
-    if (roof.material === type.id && roof.hp < REPAIR_BELOW) out.push({ level: "roof", x: nest.x, y: nest.y, existing: true });
-  } else if (roofSupported(grid, nest.x, nest.y, type)) {
+    const fits = roof.material === type.id || (formOf(type) !== FORM.pole && roofSupported(ctx.world, nest.x, nest.y, type));
+    if (fits && roof.hp < REPAIR_BELOW) out.push({ level: "roof", x: nest.x, y: nest.y, existing: true });
+  } else if (roofSupported(ctx.world, nest.x, nest.y, type)) {
     out.push({ level: "roof", x: nest.x, y: nest.y, existing: false });
   }
   return out;
@@ -359,7 +361,7 @@ export const BUILD: ActionDef = {
     }
     const spot = choosePlacement(agent, world, options);
     const use = Math.min(have, unitsToComplete(world.grid, spot.level, spot.x, spot.y, type));
-    if (use > 0 && addToBlock(world, spot.level, spot.x, spot.y, type, use, agent.id) > 0) {
+    if (use > 0 && addToBlock(world, spot.level, spot.x, spot.y, type, use, agent.id, nest) > 0) {
       dropUnits(agent, type.id, use);
       agent.placedSinceWake[spot.level]++;
       agent.stats.blocksPlaced++;

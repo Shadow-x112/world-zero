@@ -13,7 +13,7 @@ import type { System, World } from "../core/world.ts";
 import type { MaterialType } from "../materials/registry.ts";
 import { CHUNK_SIZE, Terrain, type Chunk } from "../world/chunk.ts";
 import type { Grid } from "../world/grid.ts";
-import { ROLE, aftermath, build, removePiece, settle, tileKey, tileOfKey, wear, type PieceEvents, type Role } from "./pieces.ts";
+import { FORM, LEVEL_Z, ROLE, WALL_HEIGHT, aftermath, formOf, build, contains, rayHit, removePiece, settle, tileKey, tileOfKey, touch, unitsPerPiece, wear, type Piece, type PieceEvents, type Role } from "./pieces.ts";
 
 export type Level = "wall" | "roof";
 
@@ -73,50 +73,168 @@ const roleOf = (level: Level): Role => (level === "wall" ? ROLE.wall : ROLE.roof
 
 /**
  * Builds units of material into the wall or roof at a tile, as pieces.
- * Returns the soundness gained (0 if the tile holds a block of another material, or a
- * roof has nothing to rest on).
+ * Returns the units used (0 if nothing could be set there: another material's wall, a
+ * roof with nothing to rest on, or a whole wall with nothing worn enough to replace).
+ * Units set in are used up even if what they made gives way at once.
  */
-export function addToBlock(world: World, level: Level, x: number, y: number, type: MaterialType, units: number, agentId: number): number {
+export function addToBlock(
+  world: World, level: Level, x: number, y: number, type: MaterialType, units: number, agentId: number, toward?: { x: number; y: number },
+): number {
   const grid = world.grid;
   const l = LAYER[level];
   const existing = grid.peek(l.mat, x, y);
-  if (existing !== 0 && existing !== type.id) return 0;
+  // Walls are of one stuff; a roof can take other stuff laid over its poles.
+  if (existing !== 0 && existing !== type.id && !(level === "roof" && formOf(type) !== FORM.pole && roofSupported(world, x, y, type))) return 0;
   const hp = existing === 0 ? 0 : grid.peek(l.hp, x, y);
   if (hp >= FULL_HP) return 0;
-  const made = build(world, roleOf(level), x, y, type, units, agentId, Math.max(1, roofSpan(type)));
+  const made = build(world, roleOf(level), x, y, type, units, agentId, Math.max(1, roofSpan(type)), toward);
   if (made.length === 0) return 0;
   const ev = settle(world);
   ev.tiles.add(tileKey(x, y));
+  for (const p of made) if (world.pieces.get(p.id)) touch(ev, p);
   afterChange(world, ev);
-  return Math.max(0, grid.peek(l.hp, x, y) - hp);
+  return made.reduce((n, p) => n + p.units, 0);
+}
+
+export { WALL_HEIGHT };
+/** Cover counts only above someone lying down (tiles above the ground). */
+export const COVER_ABOVE = 0.3;
+
+const S4 = [-0.375, -0.125, 0.125, 0.375];
+/** Finer, for cover overhead: about one pole's width apart, so every pole laid counts. */
+const S10 = Array.from({ length: 10 }, (_, i) => -0.45 + i * 0.1);
+const DIRS = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+
+/** Soundness-weighted share of sample rays that meet a piece, and what most of it is made of. */
+interface Cover {
+  share: number;
+  sound: number;
+  material: number;
+  first: Piece | null;
+}
+
+function tally(hits: Piece[], rays: number): Cover {
+  if (hits.length === 0) return { share: 0, sound: 0, material: 0, first: null };
+  let sound = 0;
+  const byMaterial = new Map<number, number>();
+  for (const p of hits) {
+    sound += p.hp / FULL_HP;
+    byMaterial.set(p.material, (byMaterial.get(p.material) ?? 0) + 1);
+  }
+  let material = 0, most = -1;
+  for (const [m, n] of [...byMaterial].sort((a, b) => a[0] - b[0])) if (n > most) [material, most] = [m, n];
+  const first = hits.reduce((a, b) => (b.id < a.id ? b : a));
+  return { share: hits.length / rays, sound: sound / hits.length, material, first };
+}
+
+/** The first piece (of those given) a ray meets within reach, if any. */
+function firstHit(pieces: Piece[], ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, from: number, to: number): Piece | null {
+  let best: Piece | null = null, bt = Infinity;
+  for (const p of pieces) {
+    const t = rayHit(p, ox, oy, oz, dx, dy, dz, to);
+    if (t >= from && t < bt) [best, bt] = [p, t];
+    else if (t < from && t !== Infinity && contains(p, ox + dx * from, oy + dy * from, oz + dz * from) && from < bt) [best, bt] = [p, from];
+  }
+  return best;
 }
 
 /**
- * Brings a tile's wall and roof layers up to date with its pieces: what stands there
- * (the material most of it is made of), and how much of a full block it amounts to.
+ * How much of a wall's face is filled: rays sent across the tile at heights up to
+ * WALL_HEIGHT, from whichever side it is most closed against.
+ */
+function wallFace(world: World, x: number, y: number, near: Piece[]): Cover {
+  const z0 = world.grid.heightAt(x, y) * LEVEL_Z;
+  let best: Cover = { share: 0, sound: 0, material: 0, first: null };
+  for (const a of DIRS) {
+    const dx = Math.cos(a), dy = Math.sin(a);
+    const hits: Piece[] = [];
+    for (const s of S4) {
+      for (const h of [0.12, 0.38, 0.64, WALL_HEIGHT - 0.04]) {
+        const ox = x - dx * 0.7 - dy * s, oy = y - dy * 0.7 + dx * s;
+        const p = firstHit(near, ox, oy, z0 + h, dx, dy, 0, 0.2, 1.2);
+        if (p) hits.push(p);
+      }
+    }
+    const c = tally(hits, 16);
+    if (c.share * c.sound > best.share * best.sound) best = c;
+  }
+  return best;
+}
+
+/** How much of a tile is covered overhead: rays straight up from above someone lying there. */
+function overhead(world: World, x: number, y: number, near: Piece[]): Cover {
+  const z0 = world.grid.heightAt(x, y) * LEVEL_Z;
+  const hits: Piece[] = [];
+  for (const sy of S10) for (const sx of S10) {
+    const p = firstHit(near, x + sx, y + sy, z0 + COVER_ABOVE, 0, 0, 1, 0, 3);
+    if (p) hits.push(p);
+  }
+  return tally(hits, 100);
+}
+
+/** Whether the pieces on a tile leave no way through it (body-high, mostly filled, or closed straight across). */
+function solidAt(world: World, x: number, y: number, near: Piece[]): boolean {
+  if (near.length === 0) return false;
+  const z0 = world.grid.heightAt(x, y) * LEVEL_Z;
+  const blocked: boolean[] = [];
+  for (const sy of S4) for (const sx of S4) {
+    blocked.push(near.some((p) => contains(p, x + sx, y + sy, z0 + 0.3) || contains(p, x + sx, y + sy, z0 + 0.75)));
+  }
+  const n = blocked.filter(Boolean).length;
+  if (n >= 7) return true;
+  for (let i = 0; i < 4; i++) {
+    if ([0, 1, 2, 3].every((k) => blocked[i * 4 + k])) return true; // straight across one way
+    if ([0, 1, 2, 3].every((k) => blocked[k * 4 + i])) return true; // or the other
+  }
+  return false;
+}
+
+/**
+ * Brings a tile's layers up to date with the pieces around it, measured from their real
+ * shapes:
+ *   wall   what was built into a wall here, and how much of its face it fills (0-1000)
+ *   roof   how much of the tile is covered overhead, by what (0-1000)
+ *   solid  whether there is no way through
+ * Soundness counts: a rotten screen keeps out less than a sound one.
  */
 export function deriveTile(world: World, x: number, y: number): void {
   const grid = world.grid;
-  for (const level of ["wall", "roof"] as Level[]) {
-    const l = LAYER[level];
-    const pieces = world.pieces.at(x, y, roleOf(level));
-    let sound = 0;
-    const byMaterial = new Map<number, number>();
-    for (const p of pieces) {
-      sound += p.mass * (p.hp / FULL_HP);
-      byMaterial.set(p.material, (byMaterial.get(p.material) ?? 0) + p.mass);
-    }
-    const hp = Math.min(FULL_HP, Math.round((sound / BLOCK_MASS) * FULL_HP));
-    if (pieces.length === 0 || hp <= 0) {
-      if (grid.peek(l.mat, x, y) !== 0) clearLayers(grid, level, x, y);
-      continue;
-    }
+  const near = world.pieces.near(x, y);
+  const own = world.pieces.at(x, y, ROLE.wall);
+  const set = (name: string, value: number) => {
+    if (grid.peek(name, x, y) !== value) grid.set(name, x, y, value);
+  };
+  // Wall: only where something was built as a wall.
+  if (own.length === 0) {
+    if (grid.peek("wall", x, y) !== 0) clearLayers(grid, "wall", x, y);
+  } else {
+    const face = wallFace(world, x, y, near);
+    const byMass = new Map<number, number>();
+    for (const p of own) byMass.set(p.material, (byMass.get(p.material) ?? 0) + p.mass);
     let material = 0, most = -1;
-    for (const [m, mass] of [...byMaterial].sort((a, b) => a[0] - b[0])) if (mass > most) [material, most] = [m, mass];
-    const first = pieces[0];
-    const want: [string, number][] = [[l.mat, material], [l.hp, hp], [l.by, first.by], [l.day, Math.min(65535, first.day + 1)]];
-    for (const [name, value] of want) if (grid.peek(name, x, y) !== value) grid.set(name, x, y, value);
+    for (const [m, mass] of [...byMass].sort((a, b) => a[0] - b[0])) if (mass > most) [material, most] = [m, mass];
+    set("wall", material);
+    set("wallHp", Math.max(1, Math.round(face.share * face.sound * FULL_HP)));
+    set("wallBy", own[0].by);
+    set("wallDay", Math.min(65535, own[0].day + 1));
   }
+  // Roof: whatever covers the tile overhead (not the tile's own wall).
+  const above = near.filter((p) => !(p.role === ROLE.wall && p.tx === x && p.ty === y));
+  const cover = overhead(world, x, y, above);
+  const hp = Math.round(cover.share * cover.sound * FULL_HP);
+  if (hp <= 0) {
+    if (grid.peek("roof", x, y) !== 0) clearLayers(grid, "roof", x, y);
+  } else {
+    const roofs = world.pieces.at(x, y, ROLE.roof);
+    const first = roofs[0] ?? cover.first!;
+    set("roof", cover.material);
+    set("roofHp", hp);
+    set("roofBy", first.by);
+    set("roofDay", Math.min(65535, first.day + 1));
+  }
+  // Solid.
+  const solid = solidAt(world, x, y, near) ? 1 : 0;
+  if (solid || grid.peek("solid", x, y) !== 0) set("solid", solid);
 }
 
 /** After pieces changed: the injured, the chronicle, and every touched tile's layers. */
@@ -128,11 +246,10 @@ function afterChange(world: World, ev: PieceEvents): void {
   }
 }
 
-/** Units that would bring a block to full soundness (all of them for a new block). */
+/** Units to set into a wall or roof at one go: one piece's worth, until it is whole. */
 export function unitsToComplete(grid: Grid, level: Level, x: number, y: number, type: MaterialType): number {
   const hp = grid.peek(LAYER[level].hp, x, y);
-  const missing = FULL_HP - hp;
-  return Math.max(0, Math.ceil((missing * BLOCK_MASS) / FULL_HP / Math.max(0.01, type.props.mass) - 1e-9));
+  return hp >= FULL_HP ? 0 : unitsPerPiece(type);
 }
 
 /** Everything of a wall or roof at a tile is gone (burned); what rested on it falls. */
@@ -153,9 +270,15 @@ function clearLayers(grid: Grid, level: Level, x: number, y: number): void {
 }
 
 /** Whether a roof of this material over a tile would be held up by a wall within its reach. */
-export function roofSupported(grid: Grid, x: number, y: number, type: MaterialType): boolean {
+/** Poles a roof needs before anything else can be laid over them. */
+export const FRAME_POLES = 3;
+
+export function roofSupported(world: World, x: number, y: number, type: MaterialType): boolean {
+  const grid = world.grid;
   const span = roofSpan(type);
   if (span === 0) return false;
+  // Only long poles reach from a wall; anything else needs poles across first to lie on.
+  if (formOf(type) !== FORM.pole) return world.pieces.at(x, y, ROLE.roof).filter((q) => q.form === FORM.pole).length >= FRAME_POLES;
   for (let oy = -span; oy <= span; oy++) {
     for (let ox = -span; ox <= span; ox++) {
       if ((ox !== 0 || oy !== 0) && hasWall(grid, x + ox, y + oy)) return true;
@@ -286,7 +409,28 @@ export function piecesFromBlocks(world: World): void {
     const b = blockAt(world.grid, level, x, y)!;
     const type = world.materials.get(b.material);
     if (!type) continue;
-    const made = build(world, roleOf(level), x, y, type, unitsPerBlock(type), b.by, Math.max(1, roofSpan(type)));
+    // A wall faces the nearest sleeping place beside it, as it was built to.
+    let toward: { x: number; y: number } | undefined;
+    let best = Infinity;
+    for (const a of world.population.list()) {
+      const n = a.lastSleep;
+      if (!n || Math.max(Math.abs(n.x - x), Math.abs(n.y - y)) > 1 || (n.x === x && n.y === y)) continue;
+      const d = (n.x - x) ** 2 + (n.y - y) ** 2;
+      if (d < best || (d === best && toward && (n.x < toward.x || (n.x === toward.x && n.y < toward.y)))) [best, toward] = [d, { x: n.x, y: n.y }];
+    }
+    // As many pieces as it takes to stand as whole as it stood (or as near as its material can).
+    const made: Piece[] = [];
+    let stale = 0;
+    for (let i = 0; i < 40 && stale < 8; i++) {
+      const more = build(world, roleOf(level), x, y, type, unitsPerPiece(type), b.by, Math.max(1, roofSpan(type)), toward);
+      if (more.length === 0) break;
+      made.push(...more);
+      const before = world.grid.peek(LAYER[level].hp, x, y);
+      deriveTile(world, x, y);
+      const after = world.grid.peek(LAYER[level].hp, x, y);
+      if (after >= FULL_HP) break;
+      stale = after > before ? 0 : stale + 1;
+    }
     for (const p of made) {
       p.hp = b.hp;
       p.day = Math.max(-1, b.day);
@@ -294,6 +438,7 @@ export function piecesFromBlocks(world: World): void {
   }
   const ev = settle(world);
   for (const { x, y } of blocks) ev.tiles.add(tileKey(x, y));
+  for (const p of world.pieces.all.values()) touch(ev, p);
   for (const k of [...ev.tiles].sort((a, b) => a - b)) {
     const [x, y] = tileOfKey(k);
     deriveTile(world, x, y);

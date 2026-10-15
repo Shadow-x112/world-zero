@@ -17,6 +17,7 @@ import {
   shelterAt,
   unitsPerBlock,
 } from "../src/building/structures.ts";
+import { unitsPerPiece } from "../src/building/pieces.ts";
 import { findPath } from "../src/agents/pathfinding.ts";
 import { SpatialIndex } from "../src/agents/senses.ts";
 import { updateBody, RATES } from "../src/agents/needs.ts";
@@ -49,9 +50,22 @@ function clearGround(world: World, x: number, y: number, r: number): void {
   }
 }
 
-function wall(world: World, x: number, y: number, material: number, agentId = 1): void {
+/** Builds a wall up until it is whole (piece by piece), facing a point if given. */
+function wall(world: World, x: number, y: number, material: number, agentId = 1, toward?: { x: number; y: number }): void {
   const type = world.materials.require(material);
-  addToBlock(world, "wall", x, y, type, unitsPerBlock(type), agentId);
+  let stale = 0;
+  for (let i = 0; i < 80 && stale < 3 && (blockAt(world.grid, "wall", x, y)?.hp ?? 0) < FULL_HP; i++) {
+    stale = addToBlock(world, "wall", x, y, type, unitsPerPiece(type), agentId, toward) === 0 ? 99 : 0;
+  }
+}
+
+/** Builds a roof up until it covers the tile (or nothing more can be added). */
+function roof(world: World, x: number, y: number, material: number, agentId = 1): void {
+  const type = world.materials.require(material);
+  let stale = 0;
+  for (let i = 0; i < 40 && stale < 8 && (blockAt(world.grid, "roof", x, y)?.hp ?? 0) < FULL_HP; i++) {
+    stale = addToBlock(world, "roof", x, y, type, unitsPerPiece(type), agentId) === 0 ? 99 : 0;
+  }
 }
 
 function ctxOf(world: World): AgentContext {
@@ -97,15 +111,15 @@ test("shelter: open ground gives none; walls around give up to half; cover overh
   const [x, y] = [20, 20];
   clearGround(world, x, y, 3);
   assert.equal(shelterAt(world, x, y), 0);
-  wall(world, x + 1, y, STONE);
+  wall(world, x + 1, y, STONE, 1, { x, y });
   const one = shelterAt(world, x, y);
   assert.ok(one > 0 && one < 0.1, `one wall: ${one}`);
-  for (const [dx, dy] of [[-1, 0], [0, 1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) wall(world, x + dx, y + dy, STONE);
+  for (const [dx, dy] of [[-1, 0], [0, 1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) wall(world, x + dx, y + dy, STONE, 1, { x, y });
   const ring = shelterAt(world, x, y);
   assert.ok(ring > 0.4 && ring <= 0.5, `ring with a doorway: ${ring}`);
   const grove = world.materials.require(GROVE);
-  assert.ok(roofSupported(world.grid, x, y, grove));
-  addToBlock(world, "roof", x, y, grove, 2, 1);
+  assert.ok(roofSupported(world, x, y, grove));
+  roof(world, x, y, GROVE);
   const hut = shelterAt(world, x, y);
   assert.ok(hut > 0.85 && hut <= 1, `walls and a roof: ${hut}`);
 });
@@ -126,19 +140,24 @@ test("a roof needs a wall within reach, and falls when its wall weathers away", 
   const [x, y] = [40, -10];
   clearGround(world, x, y, 4);
   const fiber = world.materials.require(FIBER);
-  assert.equal(roofSupported(world.grid, x, y, fiber), false, "nothing to rest on");
-  wall(world, x + 1, y, FIBER);
-  assert.ok(roofSupported(world.grid, x, y, fiber));
-  assert.equal(roofSupported(world.grid, x - 1, y, fiber), false, "fiber reaches only one tile");
-  addToBlock(world, "roof", x, y, fiber, 8, 1);
-  assert.ok(blockAt(world.grid, "roof", x, y));
+  const grove = world.materials.require(GROVE);
+  assert.equal(roofSupported(world, x, y, grove), false, "nothing to rest on");
+  wall(world, x + 1, y, FIBER, 1, { x, y });
+  assert.ok(roofSupported(world, x, y, grove));
+  assert.ok(roofSupported(world, x - 1, y, grove), "long poles reach two tiles");
+  assert.equal(roofSupported(world, x - 2, y, grove), false);
+  assert.equal(roofSupported(world, x, y, fiber), false, "woven stuff can't reach from a wall: it needs poles to lie on");
+  // A few poles leaned from the screen's top down to the ground beyond.
+  for (let i = 0; i < 3; i++) addToBlock(world, "roof", x, y, grove, 1, 1);
+  assert.ok(blockAt(world.grid, "roof", x, y), "a lean-to");
+  assert.ok(roofSupported(world, x, y, fiber), "and now there is something to lay mats on");
   const structures = new Structures();
   let days = 0;
   while (blockAt(world.grid, "wall", x + 1, y) && days < 30) {
     structures.weather(world);
     days++;
   }
-  assert.ok(days >= 6 && days <= 10, `fiber wall lasted ${days} days`);
+  assert.ok(days >= 4 && days <= 10, `fiber wall lasted ${days} days`);
   assert.equal(blockAt(world.grid, "roof", x, y), null, "the roof came down with it");
 });
 
@@ -225,11 +244,11 @@ test("waking warmer after building a roof makes it lean toward roofs", () => {
   agent.y = y;
   agent.lastSleep = { x, y };
   nestOf(agent, ctxOf(world));
-  wall(world, x + 1, y, GROVE);
+  wall(world, x + 1, y, GROVE, 1, { x, y });
   agent.placedSinceWake.wall = 1;
   wakeAtNest(agent, world);
   const afterWall = { ...agent.buildLeaning };
-  addToBlock(world, "roof", x, y, world.materials.require(GROVE), 2, agent.id);
+  roof(world, x, y, GROVE, agent.id);
   agent.placedSinceWake.roof = 1;
   wakeAtNest(agent, world);
   assert.ok(afterWall.wall > 1, "a wall helped a little");

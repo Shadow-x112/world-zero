@@ -35,7 +35,7 @@ export class Regrowth implements System {
     for (const chunk of world.grid.changedChunks()) {
       const material = chunk.layer("material");
       const amount = chunk.layer("amount");
-      const wall = chunk.wallLayer; // nothing grows under a wall
+      const wall = chunk.peekLayer("wall") ?? null; // nothing grows under a wall
       let changed = false;
       for (let i = 0; i < material.length; i++) {
         const id = material[i];

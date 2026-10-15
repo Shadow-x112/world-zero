@@ -201,8 +201,8 @@ export class Grid {
     const chunk = this.getChunk(cx, cy);
     const i = (y - cy * CHUNK_SIZE) * CHUNK_SIZE + (x - cx * CHUNK_SIZE);
     if (chunk.terrainLayer[i] !== Terrain.open) return false;
-    const wall = chunk.wallLayer;
-    if (wall !== null && wall[i] !== 0) return false;
+    const solid = chunk.solidLayer;
+    if (solid !== null && solid[i] !== 0) return false;
     const fire = chunk.fireLayer;
     return fire === null || fire[i] === 0;
   }

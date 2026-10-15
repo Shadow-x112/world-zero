@@ -44,12 +44,14 @@ export const LAYERS: Record<string, LayerKind> = {
   roofHp: "u16",
   roofBy: "i32",
   roofDay: "u16",
+  /** 1 where what is built leaves no way through (see building/structures.ts). */
+  solid: "u8",
   /** Fire burning on the tile: remaining fuel in tenths of an hour (0 = no fire). */
   fire: "u16",
 };
 
 /** Layers that only exist in chunks that need them (everything else is created with the chunk). */
-export const LAZY_LAYERS = new Set(["wall", "wallHp", "wallBy", "wallDay", "roof", "roofHp", "roofBy", "roofDay", "fire"]);
+export const LAZY_LAYERS = new Set(["wall", "wallHp", "wallBy", "wallDay", "roof", "roofHp", "roofBy", "roofDay", "solid", "fire"]);
 
 export const Terrain = {
   open: 0,
@@ -131,8 +133,8 @@ export class Chunk {
     return this.layers.get(name);
   }
 
-  /** The wall layer, or null if nothing was ever built here (read on every pathfinding step). */
-  get wallLayer(): LayerArray | null {
+  /** The solid layer (what blocks the way), or null if nothing was ever built here (read on every pathfinding step). */
+  get solidLayer(): LayerArray | null {
     return this.wallCache;
   }
 
@@ -144,7 +146,7 @@ export class Chunk {
   private cache(name: string, array: LayerArray): void {
     if (name === "terrain") this.terrainCache = array;
     else if (name === "height") this.heightCache = array;
-    else if (name === "wall") this.wallCache = array;
+    else if (name === "solid") this.wallCache = array;
     else if (name === "fire") this.fireCache = array;
   }
 
