@@ -48,10 +48,12 @@ export const LAYERS: Record<string, LayerKind> = {
   solid: "u8",
   /** Fire burning on the tile: remaining fuel in tenths of an hour (0 = no fire). */
   fire: "u16",
+  /** Of that, how long it still blazes (tenths of an hour); the rest is embers. */
+  blaze: "u16",
 };
 
 /** Layers that only exist in chunks that need them (everything else is created with the chunk). */
-export const LAZY_LAYERS = new Set(["wall", "wallHp", "wallBy", "wallDay", "roof", "roofHp", "roofBy", "roofDay", "solid", "fire"]);
+export const LAZY_LAYERS = new Set(["wall", "wallHp", "wallBy", "wallDay", "roof", "roofHp", "roofBy", "roofDay", "solid", "fire", "blaze"]);
 
 export const Terrain = {
   open: 0,

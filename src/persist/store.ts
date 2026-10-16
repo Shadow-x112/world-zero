@@ -10,6 +10,7 @@
 
 import { PieceStore } from "../building/pieces.ts";
 import { piecesFromBlocks } from "../building/structures.ts";
+import { tameOldFires } from "../world/fire.ts";
 import { historyFromChronicle, type DayRecord } from "../core/history.ts";
 import { mkdir, readFile, readdir, rename, copyFile, rm, open } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -31,7 +32,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 16;
+export const SAVE_FORMAT_VERSION = 17;
 
 interface SavedChunk {
   cx: number;
@@ -45,6 +46,8 @@ interface SavedChunk {
 
 export interface SaveData {
   format: number;
+  /** Set only by the 16 -> 17 migration: fires from before blazes and embers, to be tamed on load. */
+  tameFires?: boolean;
   savedAt: string;
   meta: WorldMeta;
   tick: number;
@@ -274,6 +277,9 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
       agents: data.population.agents.map((a: any) => ({ ...a, buildSense: { lessons: {}, placed: {}, studied: -1 } })),
     },
   }),
+  // 16 -> 17: fires blaze, then smoulder. Fires burning from before (with days of fuel in a
+  // single patch of growth) are cut to a day of embers once the world is loaded.
+  16: (data) => ({ ...data, format: 17, tameFires: true }),
 };
 
 function encodeLayer(array: LayerArray): string {
@@ -360,6 +366,7 @@ export function deserializeWorld(raw: any): { world: World; speed: number } {
     }
     if (save.pieces) w.pieces = PieceStore.fromJSON(save.pieces, w);
     else piecesFromBlocks(w);
+    if (save.tameFires) tameOldFires(w);
     if (!save.population) {
       const founders = w.population.spawnFounders(w.rng, w.tick);
       w.chronicle.add(

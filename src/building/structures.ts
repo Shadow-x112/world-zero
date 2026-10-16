@@ -259,6 +259,14 @@ export function unitsToComplete(grid: Grid, level: Level, x: number, y: number, 
   return hp >= FULL_HP ? 0 : unitsPerPiece(type);
 }
 
+/** Pieces burn away (each where it stands); what rested on them falls. */
+export function burnPieces(world: World, pieces: Piece[]): void {
+  const ev: PieceEvents = { fell: [], broke: [], tiles: new Set(), rotted: [] };
+  for (const p of pieces) removePiece(world, p, ev);
+  settle(world, ev);
+  afterChange(world, ev);
+}
+
 /** Everything of a wall or roof at a tile is gone (burned); what rested on it falls. */
 export function removeBlock(world: World, level: Level, x: number, y: number): void {
   const ev: PieceEvents = { fell: [], broke: [], tiles: new Set([tileKey(x, y)]), rotted: [] };

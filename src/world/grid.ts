@@ -40,7 +40,7 @@ export function toLocalCoord(v: number): number {
  * constantly (footsteps, amounts taken and regrown, a fire's fuel) and watchers
  * learn of them in other ways (fires are streamed; paths and amounts refresh slowly).
  */
-export const QUIET_LAYERS = new Set(["wear", "amount", "fire"]);
+export const QUIET_LAYERS = new Set(["wear", "amount", "fire", "blaze"]);
 
 /** Fraction of wear kept each world day. A single pass fades within a day; regular use builds up. */
 export const WEAR_DAILY_KEEP = 0.93;
