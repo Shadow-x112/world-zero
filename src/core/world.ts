@@ -20,6 +20,7 @@ import { GroundItems } from "../items/item.ts";
 import { Drying } from "../items/drying.ts";
 import { FireSystem } from "../world/fire.ts";
 import { Weather } from "../world/weather.ts";
+import { Lore } from "../culture/lore.ts";
 
 export interface System {
   readonly name: string;
@@ -52,6 +53,8 @@ export class World {
   groundItems = new GroundItems();
   /** Everything anyone has built, piece by piece (see building/pieces.ts). */
   pieces = new PieceStore();
+  /** Knowledge with a history: who found each way, who passed it to whom, who knows it now (see culture/lore.ts). */
+  lore = new Lore();
   /** One record of vital statistics per world day (see core/history.ts). */
   history: DayRecord[] = [];
   /** Burning tiles right now (an index over the grid's fire layer). */
@@ -94,6 +97,7 @@ export class World {
     this.addSystem(new Drying());
     this.addSystem(new FireSystem());
     this.addSystem(new HistorySystem());
+    this.addSystem({ name: "lore", update: (world) => world.lore.update(world) });
   }
 
   /** A world rebuilt from saved parts (see persist/store.ts). */

@@ -99,6 +99,7 @@ export function watchSuccess(ctx: AgentContext, doer: Agent, kind: SkillKind, re
       if (!memory || memory.ok === 0) {
         watcher.tried[recipeKey] = { n: (memory?.n ?? 0) + 1, ok: 1 }; // seen working: it can be done
         feel(watcher, "wonder", 0.15);
+        world.lore.learned(world, watcher, doer, "watched");
       }
     }
   }
@@ -206,16 +207,18 @@ export function teachNearby(agent: Agent, ctx: AgentContext): void {
       const what = type ? describe(type.props) : "that stuff";
       // Said with a word for it, if the teacher has one: the word goes with the lesson.
       const concept = lesson.use === "wall" ? "wall" : "roof";
+      const about = `build:${lesson.use}${lesson.v > 0 ? "+" : "-"}:${lesson.material}`; // (its name in the world's lore)
+      lessonLearned(world, agent, learner, phraseLesson(lesson.use, what, lesson.v), "buildingLesson", about);
       const word = agent.lexicon[concept];
-      if (word) hear(learner, concept, word.w, world);
-      lessonLearned(world, agent, learner, phraseLesson(lesson.use, what, lesson.v), "buildingLesson");
+      if (word) hear(learner, concept, word.w, world, agent);
       return;
     }
   }
 }
 
 /** The lesson lands: knowledge, warmth, and - once in the world - history. */
-function lessonLearned(world: World, teacher: Agent, learner: Agent, what: string, first?: string): void {
+function lessonLearned(world: World, teacher: Agent, learner: Agent, what: string, first?: string, about?: string): void {
+  world.lore.learned(world, learner, teacher, "taught", about);
   const toTeacher = learner.bondWith(teacher.id);
   if (learner.bonds[teacher.id]) {
     toTeacher.trust = Math.min(1, toTeacher.trust + 0.03);

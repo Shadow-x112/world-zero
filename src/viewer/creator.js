@@ -93,8 +93,8 @@ export class Creator {
   async refresh() {
     if (!this.on) return;
     try {
-      const [overview, history, words, families, log] = await Promise.all(["overview", "history", "words", "families", "log"].map((w) => api.creator(w)));
-      Object.assign(this.data, { overview, history, words, families, log });
+      const [overview, history, words, families, log, lore] = await Promise.all(["overview", "history", "words", "families", "log", "lore"].map((w) => (w === "lore" ? api.creator(w).catch(() => null) : api.creator(w))));
+      Object.assign(this.data, { overview, history, words, families, log, lore });
       this.logLoadedAt = performance.now();
       this.render();
       if (this.showWeb) this.loadWeb();
@@ -141,6 +141,8 @@ export class Creator {
       <h3>Bonds</h3>
       <label class="check"><input type="checkbox" id="webToggleMirror" ${this.showWeb ? "checked" : ""}> show the web of bonds in the world</label>
       <p class="dim small">Cyan: affection (brighter is stronger). Pink: mates. Red: a grudge, pointing from the one who holds it.</p>
+      <h3>What they know</h3>
+      ${this.renderLore(this.data.lore)}
       <h3>Their tongue</h3>
       ${this.renderWords(w)}
       <h3>Families</h3>
@@ -333,6 +335,21 @@ export class Creator {
     } catch (err) {
       this.toast(err.message, true);
     }
+  }
+
+  renderLore(l) {
+    if (!l) return `<p class="dim">Not recorded on this server yet.</p>`;
+    if (!l.ways.length) return `<p class="dim">They know nothing yet that the world keeps count of.</p>`;
+    const who = (id) => (id === null ? "known before the record" : `found by #${String(id).padStart(2, "0")}`);
+    const rows = l.ways
+      .slice(0, 40)
+      .map((w) => {
+        const fate = w.known === 0 ? `<b class="w-bitter">lost</b>` : `<b>${w.known}</b>`;
+        const went = [w.passed ? `passed on ${w.passed}×` : "", w.hands > 1 ? `${w.hands} hands deep` : "", w.generations ? `${w.generations} generations` : "", w.losses ? `lost ${w.losses}×` : ""].filter(Boolean).join(" · ");
+        return `<li><span class="concept" title="${esc(w.name)}">${esc(w.name)}</span>${fate}<span class="dim">${who(w.foundBy)}${went ? ` · ${went}` : ""}</span></li>`;
+      })
+      .join("");
+    return `<p class="dim small">Every way the world remembers, the most widely known first: how many know it now, who found it, how far it has gone.</p><ul class="words">${rows}</ul>`;
   }
 
   renderWords(w) {

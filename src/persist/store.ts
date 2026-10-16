@@ -9,6 +9,7 @@
 // the old one, so a crash mid-save can never leave a half-written world.
 
 import { PieceStore } from "../building/pieces.ts";
+import { Lore, type LoreData } from "../culture/lore.ts";
 import { piecesFromBlocks } from "../building/structures.ts";
 import { tameOldFires } from "../world/fire.ts";
 import { historyFromChronicle, type DayRecord } from "../core/history.ts";
@@ -32,7 +33,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
 /** Bump when the save layout changes, and add a migration below. */
-export const SAVE_FORMAT_VERSION = 17;
+export const SAVE_FORMAT_VERSION = 18;
 
 interface SavedChunk {
   cx: number;
@@ -71,6 +72,8 @@ export interface SaveData {
   history: DayRecord[];
   /** Everything built, piece by piece (format 15+; null: build them from the old blocks). */
   pieces: { seq: number; pieces: number[][] } | null;
+  /** Knowledge with a history (format 18+; null: begin the record from what everyone knows now). */
+  lore: LoreData | null;
 }
 
 /** Upgrades older saves step by step. Key = format version being upgraded from. */
@@ -280,6 +283,9 @@ const MIGRATIONS: Record<number, (data: any) => any> = {
   // 16 -> 17: fires blaze, then smoulder. Fires burning from before (with days of fuel in a
   // single patch of growth) are cut to a day of embers once the world is loaded.
   16: (data) => ({ ...data, format: 17, tameFires: true }),
+  // 17 -> 18: lore. The record begins with what everyone knows now, and whoever the
+  // chronicle says found it first.
+  17: (data) => ({ ...data, format: 18, lore: null }),
 };
 
 function encodeLayer(array: LayerArray): string {
@@ -327,6 +333,7 @@ export function serializeWorld(world: World, speed: number): SaveData {
     itemSeq: world.itemSeq,
     history: world.history,
     pieces: world.pieces.toJSON(),
+    lore: world.lore.toJSON(),
   };
 }
 
@@ -367,6 +374,7 @@ export function deserializeWorld(raw: any): { world: World; speed: number } {
     if (save.pieces) w.pieces = PieceStore.fromJSON(save.pieces, w);
     else piecesFromBlocks(w);
     if (save.tameFires) tameOldFires(w);
+    w.lore = save.lore ? Lore.fromJSON(save.lore) : Lore.seed(w);
     if (!save.population) {
       const founders = w.population.spawnFounders(w.rng, w.tick);
       w.chronicle.add(

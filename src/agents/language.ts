@@ -76,10 +76,11 @@ export function conceptLabel(world: World, concept: string): string {
 }
 
 /** Speaks a word at a listener: adoption, reinforcement, or an eroding rival. */
-export function hear(listener: Agent, concept: string, word: string, world: World): void {
+export function hear(listener: Agent, concept: string, word: string, world: World, speaker?: Agent): void {
   const mine = listener.lexicon[concept];
   if (!mine) {
     listener.lexicon[concept] = { w: word, n: 1 };
+    if (speaker) world.lore.heardWord(world, listener, speaker, concept);
     if (world.isFirst("sharedWord")) {
       world.chronicle.add(
         world.tick,
@@ -95,7 +96,10 @@ export function hear(listener: Agent, concept: string, word: string, world: Worl
     return;
   }
   mine.n--;
-  if (mine.n <= 0) listener.lexicon[concept] = { w: word, n: 1 };
+  if (mine.n <= 0) {
+    listener.lexicon[concept] = { w: word, n: 1 };
+    if (speaker) world.lore.heardWord(world, listener, speaker, concept);
+  }
 }
 
 /** Using your own word settles it a little deeper. */
@@ -214,7 +218,7 @@ export function converse(a: Agent, b: Agent, ctx: AgentContext): void {
       const concept = topics[(start + i) % topics.length];
       const mine = speaker.lexicon[concept];
       if (!mine) continue;
-      hear(listener, concept, mine.w, world);
+      hear(listener, concept, mine.w, world, speaker);
       reinforce(speaker, concept);
       spoken++;
     }
@@ -233,7 +237,7 @@ export function shoutDanger(agent: Agent, ctx: AgentContext): void {
   reinforce(agent, "danger");
   for (const { agent: hearer } of ctx.index.near(agent.x, agent.y, SHOUT_RADIUS, agent)) {
     const understood = hearer.lexicon["danger"]?.w === mine.w;
-    hear(hearer, "danger", mine.w, world);
+    hear(hearer, "danger", mine.w, world, agent);
     if (understood) feel(hearer, "fear", 0.35); // forewarned: fear before the flames arrive
   }
 }

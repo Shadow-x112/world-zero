@@ -12,6 +12,7 @@ import { natureWords } from "./agents/personality.ts";
 import { skillWords } from "./agents/skill.ts";
 import { conceptLabel } from "./agents/language.ts";
 import { resentments } from "./agents/conflict.ts";
+import { wayName } from "./culture/lore.ts";
 
 const ACTION_WORDS: Record<string, string> = {
   sleep: "going to sleep",
@@ -135,6 +136,20 @@ export function agentDetail(agent: Agent, world: World): string {
       .slice(0, 3)
       .map(([concept, lex]) => `"${lex.w}" (${conceptLabel(world, concept)})`);
     lines.push(`  speaks    ${wordCount} word${wordCount === 1 ? "" : "s"}: ${sample.join(", ")}${wordCount > 3 ? ", ..." : ""}`);
+  }
+  const ways = world.lore.of(agent.id).filter((k) => !k.startsWith("word:"));
+  if (ways.length) {
+    const how: Record<string, number> = {};
+    for (const key of ways) {
+      const h = world.lore.get(key)?.holders[agent.id];
+      if (h) how[h.how] = (how[h.how] ?? 0) + 1;
+    }
+    const parts = (["found", "taught", "watched", "heard", "before"] as const)
+      .filter((k) => how[k])
+      .map((k) => (k === "found" ? `found ${how[k]} itself` : k === "before" ? `${how[k]} from before` : `${k} ${how[k]}`));
+    lines.push(`  ways      knows ${ways.length}: ${parts.join(", ")}`);
+    const own = ways.filter((k) => world.lore.get(k)?.by === agent.id).map((k) => wayName(world, k));
+    if (own.length) lines.push(`  found     ${own.slice(0, 3).join("; ")}${own.length > 3 ? "; ..." : ""} (the first to)`);
   }
   const skilled = skillWords(agent);
   if (skilled.length) lines.push(`  skilled   ${skilled.join(", ")}`);

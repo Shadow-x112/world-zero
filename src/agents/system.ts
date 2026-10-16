@@ -132,5 +132,6 @@ export function killAgent(world: World, agent: Agent, cause: Fate): void {
     `${first}${agent.label} ${DEATH_WORDS[cause]}, aged ${Math.floor(ageDays)} days. ${population.count} remain.`,
     { agentId: agent.id, cause, x: agent.x, y: agent.y, ageDays },
   );
+  world.lore.died(world, agent); // and what it knew goes with it
   world.events.emit("agentDied", { agentId: agent.id, cause });
 }

@@ -5,6 +5,7 @@
 //   families  every life the chronicle knows of, with parents
 //   words     the shared tongue: every concept, its rival words and who speaks them
 //   history   the daily vital signs
+//   lore      every way the world remembers: who found it, how far it went, who knows it now
 //   ai        one AI's hidden numbers
 
 import type { World } from "../core/world.ts";
@@ -14,6 +15,7 @@ import { describeWinter, winterSeverity } from "../world/weather.ts";
 import { commonWord, conceptLabel, worldName } from "../agents/language.ts";
 import { resentments } from "../agents/conflict.ts";
 import { fullPalette } from "./terrain.ts";
+import { wayName } from "../culture/lore.ts";
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
@@ -114,6 +116,39 @@ export function words(world: World) {
   }
   const forWorld = commonWord(world, "world");
   return { living: living.length, concepts: out, worldName: worldName(world), worldNameShare: forWorld ? r2(forWorld.share) : 0 };
+}
+
+/** Every way on record, the most widely known first; words only by count (the words view has them). */
+export function lore(world: World) {
+  const ways = [];
+  let words = 0;
+  for (const way of world.lore.ways.values()) {
+    if (way.kind === "word") {
+      if (way.known > 0) words++;
+      continue;
+    }
+    const knowers = Object.entries(way.holders)
+      .filter(([, h]) => h.gone === null)
+      .map(([id, h]) => ({ id: Number(id), how: h.how, from: h.from, hands: h.g }));
+    ways.push({
+      key: way.key,
+      kind: way.kind,
+      name: wayName(world, way.key),
+      foundBy: way.by,
+      foundDay: Math.floor(way.at / TICKS_PER_DAY),
+      known: way.known,
+      peak: way.peak,
+      ever: way.ever,
+      passed: way.passed,
+      hands: way.hands,
+      generations: way.gens,
+      lostDay: way.lost === null ? null : Math.floor(way.lost / TICKS_PER_DAY),
+      losses: way.losses,
+      knowers,
+    });
+  }
+  ways.sort((a, b) => b.known - a.known || b.ever - a.ever || (a.key < b.key ? -1 : 1));
+  return { living: world.population.count, ways, wordsSpoken: words };
 }
 
 export function history(world: World) {

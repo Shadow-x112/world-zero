@@ -19,7 +19,7 @@
 //   GET  /api/chunkdata?c=cx,cy;cx,cy    the ground of up to 64 chunks
 //   GET  /api/stream                     live changes (Server-Sent Events), limited watchers
 // Creator only:
-//   GET  /api/creator/overview | web | families | words | history | ai/<id>   hidden truths
+//   GET  /api/creator/overview | web | families | words | history | lore | ai/<id>   hidden truths
 //   GET  /api/creator/log                the private record of every act
 //   POST /api/creator/act                {"kind", "params", "confirm"?}: without confirm, a preview
 //   POST /api/creator/undo               {"id", "confirm"?}: put back the moment before the last act
@@ -212,6 +212,8 @@ export class WorldServer {
           return send(200, creatorViews.words(w));
         case "history":
           return send(200, creatorViews.history(w));
+        case "lore":
+          return send(200, creatorViews.lore(w));
         case "log":
           return send(200, { entries: this.desk?.log() ?? [] });
       }
